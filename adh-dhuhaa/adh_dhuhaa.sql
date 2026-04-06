@@ -218,7 +218,7 @@ INSERT INTO `item` (`id`, `komponen_id`, `nomor_item`, `nama_item`, `urutan`) VA
 (54, 7, '1.7', 'Kehadiran pembinaan sabtu', 7),
 (55, 7, '1.8', 'Adab minta izin dan menulis dibuku izin', 8),
 (56, 8, '2.1', 'Membuat Administrasi pembelajaran (Promes, Modul Ajar, jurnal harian, dll)', 1),
-(57, 8, '2.3', 'Metode pengajaran', 2),
+(57, 8, '2.2', 'Metode pengajaran', 2),
 (58, 8, '2.4', 'Membuat program perbaikan', 3),
 (59, 8, '2.5', 'Membimbing Siswa wudhu', 4),
 (60, 8, '2.6', 'Kebersihan dan kerapian kelas', 5),
@@ -332,6 +332,7 @@ CREATE TABLE `users` (
   `password` varchar(255) NOT NULL,
   `nama_lengkap` varchar(100) NOT NULL,
   `role` enum('admin','kepala_sekolah') DEFAULT 'admin',
+  `must_change_password` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Wajib ganti password saat login pertama',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -339,9 +340,9 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `nama_lengkap`, `role`, `created_at`) VALUES
-(1, 'admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin', '2026-03-30 02:49:31'),
-(2, 'kepala', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Hasyim Ashari, S.T', 'kepala_sekolah', '2026-03-30 02:49:31');
+INSERT INTO `users` (`id`, `username`, `password`, `nama_lengkap`, `role`, `must_change_password`, `created_at`) VALUES
+(1, 'admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin', 1, '2026-03-30 02:49:31'),
+(2, 'kepala', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Hasyim Ashari, S.T', 'kepala_sekolah', 1, '2026-03-30 02:49:31');
 
 --
 -- Indexes for dumped tables
@@ -360,13 +361,18 @@ ALTER TABLE `detail_penilaian`
 --
 ALTER TABLE `guru`
   ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_guru_nrg` (`nrg`) COMMENT 'Setiap NRG harus unik per guru',
   ADD KEY `fk_guru_tipe` (`tipe`);
 
 --
 -- Indexes for table `guru_history`
 --
 ALTER TABLE `guru_history`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  -- SARAN-05: Index untuk filter history per guru dan per aksi
+  ADD KEY `idx_history_guru_id` (`guru_id`),
+  ADD KEY `idx_history_aksi` (`aksi`),
+  ADD KEY `idx_history_waktu` (`waktu`);
 
 --
 -- Indexes for table `item`
@@ -387,7 +393,12 @@ ALTER TABLE `komponen_penilaian`
 --
 ALTER TABLE `penilaian`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `guru_id` (`guru_id`);
+  ADD KEY `guru_id` (`guru_id`),
+  -- SARAN-05: Index komposit untuk cek duplikat (guru + periode) — dipakai di validasi penilaian.php
+  ADD KEY `idx_penilaian_guru_periode` (`guru_id`, `periode_awal`, `periode_akhir`),
+  -- SARAN-05: Index untuk filter rekap dan ranking berdasarkan periode
+  ADD KEY `idx_penilaian_periode` (`periode`),
+  ADD KEY `idx_penilaian_tanggal` (`tanggal_penilaian`);
 
 --
 -- Indexes for table `tipe_guru`

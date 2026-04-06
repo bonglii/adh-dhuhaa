@@ -6,20 +6,21 @@
  * daftar 5 penilaian terbaru, serta akses cepat ke fitur utama.
  */
 
-// ─── Set judul halaman & load header (sidebar + navbar) ─────────────────────
-$pageTitle = 'Dashboard';
-require_once 'includes/header.php';
+// ─── Inisialisasi: load konfigurasi & wajib login ────────────────────────────
+// Pola konsisten dengan file lain: config → requireLogin → queries → header
+require_once 'includes/config.php';
+requireLogin();
 
 // ─── Query statistik utama ───────────────────────────────────────────────────
+// Semua query dijalankan SEBELUM header.php output HTML (pola standar)
 $totalGuru = $pdo->query("SELECT COUNT(*) FROM guru")->fetchColumn();
 $totalQuran = $pdo->query("SELECT COUNT(*) FROM guru WHERE tipe='guru_quran'")->fetchColumn();
 $totalKelas = $pdo->query("SELECT COUNT(*) FROM guru WHERE tipe='guru_kelas'")->fetchColumn();
 $totalPenilaian = $pdo->query("SELECT COUNT(*) FROM penilaian")->fetchColumn();
-// Catatan: saat ini tidak ada kolom 'status' di tabel penilaian, sehingga
-// $penilaianFinal = $totalPenilaian (semua penilaian dianggap final).
-// Jika ingin membedakan draft vs final, tambahkan kolom status di tabel penilaian
-// dan ubah query di bawah menjadi: WHERE status = 'final'
-$penilaianFinal = $pdo->query("SELECT COUNT(*) FROM penilaian")->fetchColumn();
+// Catatan: tidak ada kolom 'status' di tabel penilaian — semua penilaian dianggap final.
+// Tidak perlu query terpisah, cukup gunakan variabel yang sudah ada.
+// Untuk membedakan draft vs final: ALTER TABLE penilaian ADD status ENUM('draft','final') DEFAULT 'draft';
+$penilaianFinal = $totalPenilaian; // sama dengan $totalPenilaian, query duplikat dihapus
 
 // Penilaian terbaru
 $recentPenilaian = $pdo->query("
@@ -27,6 +28,10 @@ $recentPenilaian = $pdo->query("
     FROM penilaian p JOIN guru g ON p.guru_id = g.id
     ORDER BY p.created_at DESC LIMIT 5
 ")->fetchAll();
+
+// ─── Set judul & muat header (sidebar + navbar + HTML) ───────────────────────
+$pageTitle = 'Dashboard';
+require_once 'includes/header.php';
 ?>
 
 <div class="row g-4 mb-4">

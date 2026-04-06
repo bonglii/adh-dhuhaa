@@ -12,6 +12,63 @@ Dikonversi dari spreadsheet Excel menjadi sistem web yang terintegrasi, responsi
 
 ## 🆕 Changelog Terbaru
 
+
+### v1.4 — April 2026 (QA Bugfix Lanjutan – Security Hardening)
+
+#### 🔴 Bug yang Diperbaiki
+
+| # | File | Jenis Bug | Deskripsi | Status |
+|---|------|-----------|-----------|--------|
+| 1 | `penilaian.php` | **Hapus penilaian tunggal rentan CSRF** | Aksi hapus satu penilaian dipicu via GET (`?action=delete&id=N`) tanpa token, sehingga bisa dipicu dari link/img eksternal. Diubah ke POST + CSRF token one-time, konsisten dengan `delete_all` | ✅ Fixed |
+| 2 | `penilaian.php` | **Nilai item kustom tidak diklem** | Nilai poin tambahan (`$custom_nilai`) tidak melalui validasi range 1–5 sebelum INSERT, sehingga nilai 0 atau 6+ bisa masuk database jika request dimanipulasi | ✅ Fixed |
+| 3 | `guru.php` | **Hapus guru/riwayat/tipe rentan CSRF** | Tiga aksi hapus (`delete`, `delete_history`, `delete_tipe`) dipicu via GET tanpa token. Semua diubah ke POST + CSRF token | ✅ Fixed |
+| 4 | `komponen.php` | **Hapus indikator/item rentan CSRF** | `delete_komponen` dan `delete_item` juga masih via GET. Diubah ke POST + CSRF, dilengkapi modal konfirmasi Bootstrap dan form tersembunyi | ✅ Fixed |
+
+#### 🟡 Peringatan yang Diperbaiki
+
+| # | File | Deskripsi | Status |
+|---|------|-----------|--------|
+| 1 | `includes/config.php` · `login.php` | **Session idle timeout**: Sesi otomatis berakhir setelah 2 jam tidak aktif. Pesan notifikasi tampil di halaman login | ✅ Fixed |
+
+#### 📁 File Baru di v1.4
+- `migrate_v1.4.sql` — Dokumentasi migrasi (tidak ada perubahan skema database)
+
+---
+
+### v1.3 — April 2026 (QA Bugfix & Security Hardening)
+
+#### 🔴 Bug Kritis yang Diperbaiki
+
+| # | File | Jenis Bug | Deskripsi | Status |
+|---|------|-----------|-----------|--------|
+| 1 | `penilaian.php` | **Alert error tampil sebagai sukses** | Semua pesan error selalu pakai class `alert-success-custom` sehingga tampil hijau. Kini dibedakan: error = merah, sukses = hijau | ✅ Fixed |
+| 2 | `penilaian.php` | **Validasi duplikat bypass saat edit** | Mode edit melewati pengecekan duplikat sepenuhnya. Kini cek duplikat aktif untuk tambah dan edit, dengan exclude record sendiri (`AND id != $id`) | ✅ Fixed |
+| 3 | `penilaian.php` | **Short-circuit logic / halaman hang** | Blok eksekusi hanya berjalan jika validasi terakhir kosong, bukan semua validasi. Dipisah menjadi dua blok `if (!$msg)` terpisah | ✅ Fixed |
+| 4 | `cetak.php` | **`$subTotalsCustom` tidak dihitung** | Variabel diinisialisasi `[]` tapi tidak pernah dihitung, mengakibatkan PHP Warning jika komponen tambahan ada | ✅ Fixed |
+| 5 | `penilaian.php` · `guru.php` | **Race condition CSRF token multi-tab** | Token CSRF ditimpa jika dua tab dibuka bersamaan. Kini menggunakan `$_SESSION['csrf_tokens'][key]` (array keyed) | ✅ Fixed |
+
+#### 🟡 Peringatan yang Diperbaiki
+
+| # | File | Deskripsi | Status |
+|---|------|-----------|--------|
+| 1 | `login.php` · `ganti_password.php` · `config.php` | **Force-change password**: Kolom `must_change_password` ditambahkan ke `users`. Guard di `requireLogin()` memaksa redirect ke `ganti_password.php` sebelum akses halaman lain | ✅ Fixed |
+| 2 | `penilaian.php` | **Konfirmasi hapus pakai `confirm()` native**: Diganti dengan modal Bootstrap yang konsisten | ✅ Fixed |
+| 3 | `penilaian.php` | **Nama penilai hardcode**: Diambil dari session user (`nama_lengkap` dan `role`) | ✅ Fixed |
+
+#### 🔵 Saran yang Diimplementasikan
+
+| # | File | Deskripsi | Status |
+|---|------|-----------|--------|
+| 1 | `includes/config.php` | **Content Security Policy header** ditambahkan | ✅ Done |
+| 2 | `penilaian.php` | **Validasi range nilai server-side** 1–5 sebelum INSERT | ✅ Done |
+| 3 | `adh_dhuhaa.sql` | **Index database** untuk query rekap, ranking, duplikat, dan history | ✅ Done |
+
+#### 📁 File Baru di v1.3
+- `ganti_password.php` — Halaman ganti password dengan strength meter dan syarat visual
+- `migrate_v1.3.sql` — Skrip migrasi untuk upgrade dari v1.2 tanpa install ulang
+
+---
+
 ### v1.2 — April 2026 (Bugfix & Dokumentasi Kode Lengkap)
 
 #### 🐛 Bug yang Ditemukan & Diperbaiki

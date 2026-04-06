@@ -18,14 +18,26 @@ $action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
 
 // ================================================================
-// HAPUS INDIKATOR
+// HAPUS INDIKATOR — POST + CSRF (BUG-QA-01 FIX)
 // ================================================================
-if ($action === 'delete_komponen' && $id) {
+if ($action === 'delete_komponen' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token_dikirim = $_POST['csrf_token'] ?? '';
+    $token_session = $_SESSION['csrf_tokens']['delete_komponen'] ?? '';
+    unset($_SESSION['csrf_tokens']['delete_komponen']);
+    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
+        session_write_close();
+        $rawTab = sanitize($_POST['tab'] ?? 'guru_quran');
+        $safeTab = isValidTipe($pdo, $rawTab) ? $rawTab : 'guru_quran';
+        header('Location: komponen.php?tab=' . $safeTab . '&msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
+        exit;
+    }
+    $del_id = (int)($_POST['del_id'] ?? 0);
     // Ambil tipe_guru dulu sebelum dihapus, untuk redirect ke tab yang benar
     $tipeStmt = $pdo->prepare("SELECT tipe_guru FROM komponen_penilaian WHERE id=?");
-    $tipeStmt->execute([$id]);
-    $tabAfterDelete = $tipeStmt->fetchColumn() ?: ($_GET['tab'] ?? 'guru_quran');
-    $pdo->prepare("DELETE FROM komponen_penilaian WHERE id=?")->execute([$id]);
+    $tipeStmt->execute([$del_id]);
+    $rawTab = sanitize($_POST['tab'] ?? 'guru_quran');
+    $tabAfterDelete = $tipeStmt->fetchColumn() ?: (isValidTipe($pdo, $rawTab) ? $rawTab : 'guru_quran');
+    $pdo->prepare("DELETE FROM komponen_penilaian WHERE id=?")->execute([$del_id]);
     // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: komponen.php?tab=' . $tabAfterDelete . '&msg=' . urlencode('Indikator berhasil dihapus!'));
@@ -33,14 +45,26 @@ if ($action === 'delete_komponen' && $id) {
 }
 
 // ================================================================
-// HAPUS ITEM
+// HAPUS ITEM — POST + CSRF (BUG-QA-01 FIX)
 // ================================================================
-if ($action === 'delete_item' && $id) {
+if ($action === 'delete_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token_dikirim = $_POST['csrf_token'] ?? '';
+    $token_session = $_SESSION['csrf_tokens']['delete_item'] ?? '';
+    unset($_SESSION['csrf_tokens']['delete_item']);
+    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
+        session_write_close();
+        $rawTab = sanitize($_POST['tab'] ?? 'guru_quran');
+        $safeTab = isValidTipe($pdo, $rawTab) ? $rawTab : 'guru_quran';
+        header('Location: komponen.php?tab=' . $safeTab . '&msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
+        exit;
+    }
+    $del_id = (int)($_POST['del_id'] ?? 0);
     // Ambil tipe_guru lewat join sebelum item dihapus
     $tipeStmt = $pdo->prepare("SELECT kp.tipe_guru FROM item i JOIN komponen_penilaian kp ON i.komponen_id=kp.id WHERE i.id=?");
-    $tipeStmt->execute([$id]);
-    $tabAfterDelete = $tipeStmt->fetchColumn() ?: ($_GET['tab'] ?? 'guru_quran');
-    $pdo->prepare("DELETE FROM item WHERE id=?")->execute([$id]);
+    $tipeStmt->execute([$del_id]);
+    $rawTab = sanitize($_POST['tab'] ?? 'guru_quran');
+    $tabAfterDelete = $tipeStmt->fetchColumn() ?: (isValidTipe($pdo, $rawTab) ? $rawTab : 'guru_quran');
+    $pdo->prepare("DELETE FROM item WHERE id=?")->execute([$del_id]);
     // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: komponen.php?tab=' . $tabAfterDelete . '&msg=' . urlencode('Poin penilaian berhasil dihapus!'));
@@ -126,6 +150,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_item'])) {
 
 if (isset($_GET['msg'])) $msg = sanitize($_GET['msg']);
 
+// BUG-QA-01 FIX: Token CSRF untuk hapus indikator dan item via POST
+$csrf_delete_komponen = bin2hex(random_bytes(16));
+$csrf_delete_item     = bin2hex(random_bytes(16));
+$_SESSION['csrf_tokens']['delete_komponen'] = $csrf_delete_komponen;
+$_SESSION['csrf_tokens']['delete_item']     = $csrf_delete_item;
+
 // ================================================================
 // LOAD DATA
 // ================================================================
@@ -199,7 +229,7 @@ require_once 'includes/header.php';
                       border-bottom:none;
                       background:<?= $tabActive === $tipe ? 'var(--hijau)' : '#f9fafb' ?>;
                       color:<?= $tabActive === $tipe ? '#fff' : '#374151' ?>;">
-                <?= $label ?>
+                <?= htmlspecialchars($label) ?>
             </a>
         <?php endforeach; ?>
     </div>
@@ -237,7 +267,7 @@ require_once 'includes/header.php';
                         class="btn-primary-custom btn-sm-custom btn-edit">✏️ Edit</button>
                     <button onclick="openModalItem(<?= $komp['id'] ?>, '<?= htmlspecialchars($komp['nama_kategori']) ?>')"
                         class="btn-primary-custom btn-sm-custom" style="background:#0f766e;font-size:11px;">+ Poin</button>
-                    <button onclick="confirmDelete(<?= $komp['id'] ?>,'komponen.php','delete_komponen')"
+                    <button onclick="confirmDeleteKomponen(<?= $komp['id'] ?>, '<?= htmlspecialchars(addslashes($komp['nama_kategori'])) ?>', '<?= $tabActive ?>')"
                         class="btn-primary-custom btn-sm-custom btn-delete">🗑</button>
                 </div>
             </div>
@@ -267,7 +297,7 @@ require_once 'includes/header.php';
                                 <div style="display:flex;gap:5px;justify-content:center;">
                                     <button onclick="openModalEditItem(<?= htmlspecialchars(json_encode($item)) ?>, '<?= htmlspecialchars($komp['nama_kategori']) ?>')"
                                         class="btn-primary-custom btn-sm-custom btn-edit">Edit</button>
-                                    <button onclick="confirmDelete(<?= $item['id'] ?>,'komponen.php','delete_item')"
+                                    <button onclick="confirmDeleteItem(<?= $item['id'] ?>, '<?= htmlspecialchars(addslashes($item['nama_item'])) ?>', '<?= $tabActive ?>')"
                                         class="btn-primary-custom btn-sm-custom btn-delete">Hapus</button>
                                 </div>
                             </td>
@@ -419,14 +449,72 @@ require_once 'includes/header.php';
 
     // Buka modal otomatis jika ada parameter action edit dari URL
     <?php if ($editKomponen): ?>
-    openModalKomponen(null, <?= json_encode($editKomponen) ?>);
+    openModalKomponen(null, <?= json_encode($editKomponen, JSON_HEX_TAG | JSON_HEX_APOS) ?>);
     <?php endif; ?>
     <?php if ($editItem): ?>
-    openModalEditItem(<?= json_encode($editItem) ?>, '<?= htmlspecialchars($editItem['nama_kategori'] ?? '') ?>');
+    openModalEditItem(<?= json_encode($editItem, JSON_HEX_TAG | JSON_HEX_APOS) ?>, '<?= htmlspecialchars($editItem['nama_kategori'] ?? '') ?>');
     <?php endif; ?>
     <?php if ($action === 'add_item' && $modalKomponenId): ?>
     openModalItem(<?= $modalKomponenId ?>, '');
     <?php endif; ?>
+
+    // BUG-QA-01 FIX: Hapus indikator dan item via POST+CSRF
+    function confirmDeleteKomponen(id, nama, tab) {
+        document.getElementById('konfirmasiMsg').textContent =
+            `Hapus indikator "${nama}"? Semua poin di dalamnya juga akan terhapus.`;
+        document.getElementById('konfirmasiBtn').onclick = function() {
+            document.getElementById('hapusKomponenId').value  = id;
+            document.getElementById('hapusKomponenTab').value = tab;
+            document.getElementById('formHapusKomponen').submit();
+        };
+        const m = new bootstrap.Modal(document.getElementById('konfirmasiModal'));
+        m.show();
+    }
+    function confirmDeleteItem(id, nama, tab) {
+        document.getElementById('konfirmasiMsg').textContent =
+            `Hapus poin "${nama}"? Tindakan ini tidak bisa dibatalkan.`;
+        document.getElementById('konfirmasiBtn').onclick = function() {
+            document.getElementById('hapusItemId').value  = id;
+            document.getElementById('hapusItemTab').value = tab;
+            document.getElementById('formHapusItem').submit();
+        };
+        const m = new bootstrap.Modal(document.getElementById('konfirmasiModal'));
+        m.show();
+    }
 </script>
+
+<!-- BUG-QA-01 FIX: Modal konfirmasi hapus -->
+<div class="modal fade" id="konfirmasiModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+        <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+            <div class="modal-body" style="padding:32px 28px 20px;text-align:center;">
+                <div style="font-size:44px;margin-bottom:14px;">⚠️</div>
+                <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:8px;">Konfirmasi Hapus</div>
+                <div id="konfirmasiMsg" style="font-size:13px;color:#6b7280;line-height:1.6;"></div>
+            </div>
+            <div class="modal-footer" style="border:none;padding:0 28px 24px;gap:8px;justify-content:center;">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
+                    style="border-radius:8px;padding:8px 20px;font-size:13px;">Batal</button>
+                <button type="button" id="konfirmasiBtn"
+                    style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;">
+                    Ya, Hapus
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Form tersembunyi hapus indikator — POST + CSRF -->
+<form id="formHapusKomponen" method="POST" action="komponen.php?action=delete_komponen" style="display:none;" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_komponen ?? '') ?>">
+    <input type="hidden" name="del_id" id="hapusKomponenId" value="">
+    <input type="hidden" name="tab"    id="hapusKomponenTab" value="">
+</form>
+<!-- Form tersembunyi hapus item/poin — POST + CSRF -->
+<form id="formHapusItem" method="POST" action="komponen.php?action=delete_item" style="display:none;" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_item ?? '') ?>">
+    <input type="hidden" name="del_id" id="hapusItemId" value="">
+    <input type="hidden" name="tab"    id="hapusItemTab" value="">
+</form>
 
 <?php require_once 'includes/footer.php'; ?>

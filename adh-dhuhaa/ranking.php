@@ -12,30 +12,49 @@ $pageTitle = 'Ranking Guru';
 require_once 'includes/config.php';
 requireLogin();
 
-// ─── Query semua guru yang sudah punya penilaian, nilai terbaru per guru ─────
+// ─── WARN-06 FIX: Query dioptimasi — eliminasi correlated subquery N+1 ────────
+// Sebelumnya: 2 correlated subquery per baris (SUM dan COUNT detail_penilaian)
+// = hingga 2 × jumlah_guru query tambahan dijalankan database.
+//
+// Sekarang: satu derived table (nilai_per_pen) mengagregasi SUM+COUNT sekaligus
+// untuk SEMUA penilaian dalam satu pass, lalu di-JOIN — jauh lebih efisien.
 $rankingAll = $pdo->query("
     SELECT
-        g.id, g.nama, g.jabatan, g.tipe, g.nrg,
-        COUNT(p.id) as jml_penilaian,
-        p_last.tanggal_penilaian as last_penilaian,
-        p_last.id as last_id,
-        (
-            (SELECT COALESCE(SUM(dp2.nilai),0) FROM detail_penilaian dp2 WHERE dp2.penilaian_id = p_last.id)
-            /
-            NULLIF(
-                (SELECT COALESCE(COUNT(dp3.id),0) FROM detail_penilaian dp3 WHERE dp3.penilaian_id = p_last.id) * 5
-            , 0)
+        g.id,
+        g.nama,
+        g.jabatan,
+        g.tipe,
+        g.nrg,
+        COUNT(p.id)                               AS jml_penilaian,
+        p_last.tanggal_penilaian                  AS last_penilaian,
+        p_last.id                                 AS last_id,
+        ROUND(
+            npn.total_nilai
+            / NULLIF(npn.total_item * 5, 0)
             * 100
-        ) as nilai_akhir
+        , 1)                                      AS nilai_akhir
     FROM guru g
+    /* JOIN ke penilaian untuk menghitung jumlah penilaian per guru */
     LEFT JOIN penilaian p ON p.guru_id = g.id
+    /* Subquery sekali jalan: ambil penilaian terbaru tiap guru */
     LEFT JOIN penilaian p_last ON p_last.id = (
         SELECT id FROM penilaian
         WHERE guru_id = g.id
         ORDER BY tanggal_penilaian DESC, id DESC
         LIMIT 1
     )
-    GROUP BY g.id, p_last.id, p_last.tanggal_penilaian
+    /* Derived table: agregasi SUM nilai + COUNT item per penilaian, satu pass */
+    LEFT JOIN (
+        SELECT
+            penilaian_id,
+            COALESCE(SUM(nilai), 0)  AS total_nilai,
+            COALESCE(COUNT(id),  0)  AS total_item
+        FROM detail_penilaian
+        GROUP BY penilaian_id
+    ) npn ON npn.penilaian_id = p_last.id
+    GROUP BY g.id, g.nama, g.jabatan, g.tipe, g.nrg,
+             p_last.id, p_last.tanggal_penilaian,
+             npn.total_nilai, npn.total_item
     HAVING nilai_akhir IS NOT NULL
     ORDER BY nilai_akhir DESC
 ")->fetchAll();
@@ -213,7 +232,7 @@ function medalEmoji($rank)
                         <td><small style="color:#6b7280;"><?= htmlspecialchars($r['jabatan'] ?? '') ?></small></td>
                         <td>
                             <span class="badge-tipe badge-<?= $tipeKey ?>">
-                                <?= $tipeLabel[$r['tipe']] ?? $r['tipe'] ?>
+                                <?= htmlspecialchars($tipeLabel[$r['tipe']] ?? $r['tipe']) ?>
                             </span>
                         </td>
                         <td>
@@ -256,6 +275,13 @@ function medalEmoji($rank)
 </div>
 
 <script>
+    // escHtml — escape HTML sebelum insert ke innerHTML (mencegah DOM XSS)
+    function escHtml(str) {
+        const d = document.createElement('div');
+        d.appendChild(document.createTextNode(String(str ?? '')));
+        return d.innerHTML;
+    }
+
     function medalHtml(rank) {
         if (rank === 1) return '<span style="font-size:18px;">🥇</span>';
         if (rank === 2) return '<span style="font-size:18px;">🥈</span>';
@@ -338,8 +364,8 @@ function medalEmoji($rank)
             html += `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto;">
                 <div style="font-size:24px;">${medals[idx]}</div>
                 <div style="background:${pb};border:2px solid ${pc};border-radius:12px;padding:10px 14px;text-align:center;max-width:140px;">
-                    <div style="font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${d.nama}</div>
-                    <div style="font-size:11px;color:#6b7280;margin-top:2px;">${d.jabatan}</div>
+                    <div style="font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${escHtml(d.nama)}</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:2px;">${escHtml(d.jabatan)}</div>
                     <div style="font-size:20px;font-weight:800;color:${d.col};margin-top:4px;">${d.nilai}%</div>
                     <div style="font-size:11px;color:${d.col};font-weight:600;">${d.pred}</div>
                 </div>

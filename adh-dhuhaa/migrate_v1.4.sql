@@ -1,0 +1,17 @@
+-- ============================================================
+-- migrate_v1.4.sql — Skrip Migrasi dari v1.3 ke v1.4
+-- Sistem Penilaian Kinerja GTK – SD IT Qurani Adh-Dhuhaa
+-- April 2026
+-- ============================================================
+-- Tidak ada perubahan skema database di v1.4.
+-- Semua perbaikan v1.4 bersifat server-side (PHP):
+--   - Seluruh aksi hapus tunggal diubah dari GET ke POST+CSRF
+--   - Nilai item kustom diklem ke range 1–5 sebelum INSERT
+--   - Session idle timeout 2 jam ditambahkan di requireLogin()
+--   - Pesan session timeout tampil di halaman login
+--
+-- Jalankan file ini hanya jika upgrade dari v1.3 ke v1.4.
+-- Tidak ada query ALTER/CREATE yang perlu dieksekusi.
+-- Cukup replace semua file PHP dengan versi v1.4.
+-- ============================================================
+SELECT 'Migrasi v1.4: tidak ada perubahan skema database.' AS info;

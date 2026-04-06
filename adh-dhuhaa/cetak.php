@@ -404,7 +404,7 @@ requireLogin(); ?>
         if (empty($allIds)) {
             echo '<p style="padding:40px;text-align:center;font-family:sans-serif;">
                     Tidak ada data penilaian untuk dicetak.
-                    <br><br><a href="javascript:window.close()" style="color:#1a4731;">← Kembali ke Rekap</a>
+                    <br><br><a href="javascript:history.back()" style="color:#1a4731;">← Kembali ke Rekap</a>
                   </p>';
             exit;
         }
@@ -494,9 +494,16 @@ requireLogin(); ?>
         $totalMax += $max;
     }
 
-    // Inisialisasi subTotalsCustom sebagai array kosong.
-    // Jika $groupedCustom diisi di masa depan, hitung di sini sebelum dipakai di template.
+    // BUG-04 FIX: Hitung subTotalsCustom sebelum dipakai di template HTML.
+    // Sebelumnya: diinisialisasi [] tanpa dihitung, menyebabkan PHP Warning
+    // jika $groupedCustom berisi data (akses ke key yang tidak ada).
     $subTotalsCustom = [];
+    foreach ($groupedCustom as $kat => $items) {
+        $sum = array_sum(array_column($items, 'nilai'));
+        $max = count($items) * 5;
+        $pct = $max > 0 ? round($sum / $max * 100, 2) : 0;
+        $subTotalsCustom[$kat] = ['sum' => $sum, 'max' => $max, 'pct' => $pct];
+    }
 
     $totalPct = $totalMax > 0 ? round($totalNilai / $totalMax * 100, 2) : 0;
 
@@ -507,7 +514,7 @@ requireLogin(); ?>
 
     <div class="no-print">
         <button class="btn-cetak" onclick="window.print()">🖨 Cetak / PDF</button>
-        <button class="btn-back" onclick="window.close()">← Kembali</button>
+        <button class="btn-back" onclick="history.back()">← Kembali</button>
     </div>
 
     <div class="page-container">

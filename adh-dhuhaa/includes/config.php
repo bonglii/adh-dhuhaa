@@ -4,6 +4,26 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// ─── Security headers ────────────────────────────────────────────────────────
+// Cegah embedding di iframe (clickjacking)
+header('X-Frame-Options: SAMEORIGIN');
+// Cegah MIME sniffing
+header('X-Content-Type-Options: nosniff');
+// Sembunyikan referrer saat navigasi ke domain lain
+header('Referrer-Policy: strict-origin-when-cross-origin');
+// Hapus X-Powered-By yang mengekspos versi PHP
+header_remove('X-Powered-By');
+// SARAN-01 FIX: Content Security Policy untuk mencegah XSS yang lolos dari sanitize()
+// unsafe-inline diperlukan untuk Bootstrap inline styles & script blok PHP yang ada
+// fonts.googleapis.com untuk Google Fonts yang dipakai di login & cetak
+header("Content-Security-Policy: default-src 'self'; " .
+    "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net cdnjs.cloudflare.com; " .
+    "style-src 'self' 'unsafe-inline' fonts.googleapis.com cdn.jsdelivr.net cdnjs.cloudflare.com; " .
+    "font-src 'self' fonts.gstatic.com; " .
+    "img-src 'self' data:; " .
+    "connect-src 'self'; " .
+    "frame-ancestors 'none'");
+
 // Konfigurasi Database
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
@@ -30,7 +50,10 @@ try {
         ]
     );
 } catch (PDOException $e) {
-    die(json_encode(['error' => 'Koneksi database gagal: ' . $e->getMessage()]));
+    // Jangan tampilkan detail error ke client — bisa mengandung hostname/credentials
+    // Log ke server error log untuk keperluan debugging admin
+    error_log('DB Connection Error: ' . $e->getMessage());
+    die(json_encode(['error' => 'Koneksi database gagal. Hubungi administrator.']));
 }
 
 function isLoggedIn() {
@@ -39,7 +62,28 @@ function isLoggedIn() {
 
 function requireLogin() {
     if (!isLoggedIn()) {
+        // Simpan session sebelum redirect agar data tidak hilang
+        // (konsisten dengan pola session_write_close() di seluruh file)
+        session_write_close();
         header('Location: login.php');
+        exit;
+    }
+    // Session idle timeout: logout otomatis setelah 2 jam tidak aktif
+    $idleLimit = 7200; // detik (2 jam)
+    if (isset($_SESSION['_last_active']) && (time() - $_SESSION['_last_active']) > $idleLimit) {
+        session_unset();
+        session_destroy();
+        session_write_close();
+        header('Location: login.php?msg=' . urlencode('Sesi Anda telah berakhir karena tidak aktif. Silakan login kembali.'));
+        exit;
+    }
+    $_SESSION['_last_active'] = time();
+    // WARN-01 FIX: Jika user wajib ganti password, paksa redirect ke halaman ganti password.
+    // Cek basename agar tidak infinite redirect pada ganti_password.php itu sendiri.
+    $currentPage = basename($_SERVER['PHP_SELF']);
+    if (!empty($_SESSION['user']['must_change_password']) && $currentPage !== 'ganti_password.php') {
+        session_write_close();
+        header('Location: ganti_password.php');
         exit;
     }
 }

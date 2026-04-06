@@ -16,6 +16,14 @@
 require_once 'includes/config.php';
 requireLogin();
 
+// ─── Pastikan request berasal dari AJAX (XMLHttpRequest) ─────────────────────
+// Ini bukan pengganti CSRF token penuh, tapi mengurangi risiko akses langsung
+// dari tab browser atau link luar. Header X-Requested-With mudah ditambah di JS
+// dan sulit dipalsukan cross-origin (karena bukan simple header).
+if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
+    jsonResponse(['error' => 'Invalid request'], 400);
+}
+
 // ─── Validasi parameter tipe ────────────────────────────────────────────────
 // isValidTipe() otomatis fallback ke data default jika tabel tipe_guru belum ada
 $tipe = sanitize($_GET['tipe'] ?? '');

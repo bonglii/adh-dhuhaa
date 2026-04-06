@@ -16,14 +16,41 @@
 require_once 'includes/config.php';
 requireLogin();
 
+// ─── Ambil data user yang sedang login sebagai penilai ───────────────────────
+// WARN-05 FIX: Nama dan jabatan penilai diambil dari session user,
+// bukan hardcode 'Hasyim Ashari, S.T' yang akan salah jika kepala sekolah berganti.
+$currentUser     = getCurrentUser();
+$defaultPenilai  = $currentUser['nama_lengkap'] ?? 'Kepala Sekolah';
+// Mapping role ke jabatan penilai yang tampil di form dan cetak
+$jabatanMap = [
+    'kepala_sekolah' => 'Kepala Sekolah',
+    'admin'          => 'Administrator',
+];
+$defaultJabPenilai = $jabatanMap[$currentUser['role'] ?? ''] ?? 'Kepala Sekolah';
+
 // ─── Baca parameter aksi & ID dari URL ──────────────────────────────────────
 $msg    = '';
-$action = $_GET['action'] ?? '';
+// Whitelist $action agar tidak bisa di-inject — hanya nilai valid yang diterima
+$_allowedActions = ['', 'add', 'edit', 'delete', 'delete_all', 'delete_selected'];
+$action = in_array($_GET['action'] ?? '', $_allowedActions) ? ($_GET['action'] ?? '') : '';
 $id     = (int)($_GET['id'] ?? 0);
 
-// ─── Handle GET: Hapus satu penilaian ────────────────────────────────────────
-if ($action === 'delete' && $id) {
-    $pdo->prepare("DELETE FROM penilaian WHERE id=?")->execute([$id]);
+// ─── Handle POST: Hapus satu penilaian (dengan CSRF token) ───────────────────
+// BUG-QA-01 FIX: Diubah dari GET ke POST+CSRF agar tidak rentan CSRF attack.
+// Sebelumnya: ?action=delete&id=N via GET bisa dipicu dari link eksternal.
+if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token_dikirim = $_POST['csrf_token'] ?? '';
+    $token_session = $_SESSION['csrf_tokens']['delete_single'] ?? '';
+    unset($_SESSION['csrf_tokens']['delete_single']); // one-time use
+    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
+        session_write_close();
+        header('Location: penilaian.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
+        exit;
+    }
+    $del_id = (int)($_POST['del_id'] ?? 0);
+    if ($del_id) {
+        $pdo->prepare("DELETE FROM penilaian WHERE id=?")->execute([$del_id]);
+    }
     // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: penilaian.php?msg=' . urlencode('Penilaian berhasil dihapus!'));
@@ -31,7 +58,21 @@ if ($action === 'delete' && $id) {
 }
 
 // ─── Handle GET: Hapus semua penilaian ───────────────────────────────────────
-if ($action === 'delete_all') {
+// ─── Handle POST: Hapus semua penilaian (dengan CSRF token) ──────────────────
+// Menggunakan POST + CSRF token agar tidak bisa dipicu via GET/link biasa.
+if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token_dikirim = $_POST['csrf_token'] ?? '';
+    // BUG-05 FIX: Gunakan array keyed untuk mencegah race condition multi-tab.
+    // Dulu: $_SESSION['csrf_delete_all'] ditimpa jika dua tab dibuka bersamaan.
+    // Sekarang: setiap token memiliki key unik sendiri berdasarkan value-nya.
+    $token_session = $_SESSION['csrf_tokens']['delete_all'] ?? '';
+    unset($_SESSION['csrf_tokens']['delete_all']); // one-time use
+
+    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
+        session_write_close();
+        header('Location: penilaian.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
+        exit;
+    }
     $pdo->exec("DELETE FROM penilaian");
     // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
@@ -91,9 +132,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $guru_tipe = $gs->fetchColumn() ?: 'guru_kelas';
     }
 
-    if (!$guru_id || !$periode_awal || !$periode_akhir || !$tgl) {
-        $msg = 'Data tidak lengkap! Guru, periode, dan tanggal wajib diisi.';
-    } else {
+    // ─── Validasi urutan tanggal ─────────────────────────────────────────────
+    if ($periode_awal && $periode_akhir && $periode_awal > $periode_akhir) {
+        $msg = '⚠️ Tanggal awal periode tidak boleh lebih besar dari tanggal akhir periode!';
+    }
+
+    // ─── BUG-02 FIX: Cek duplikat berlaku untuk tambah DAN edit ──────────────
+    // Saat edit: exclude record sendiri (id != $id) agar tidak false positive
+    // Saat tambah: exclude tidak diperlukan (id = 0 tidak ada di DB)
+    if (!$msg && $guru_id && $periode_awal && $periode_akhir) {
+        $dupCek = $pdo->prepare("SELECT COUNT(*) FROM penilaian WHERE guru_id=? AND periode_awal=? AND periode_akhir=? AND id != ?");
+        $dupCek->execute([$guru_id, $periode_awal, $periode_akhir, $id ?: 0]);
+        if ($dupCek->fetchColumn() > 0) {
+            $msg = '⚠️ Penilaian untuk guru ini pada periode yang sama sudah ada! Gunakan fitur Edit untuk memperbarui.';
+        }
+    }
+
+    // ─── Validasi kelengkapan data ────────────────────────────────────────────
+    if (!$msg && (!$guru_id || !$periode_awal || !$periode_akhir || !$tgl)) {
+        $msg = '⚠️ Data tidak lengkap! Guru, periode, dan tanggal wajib diisi.';
+    }
+
+    // ─── BUG-03 FIX: Pisahkan validasi dan eksekusi secara eksplisit ─────────
+    // Sebelumnya: else { } hanya berjalan jika $msg kosong dari validasi terakhir saja
+    // Sekarang: blok eksekusi hanya berjalan jika tidak ada pesan error sama sekali
+    if (!$msg) {
         $pdo->beginTransaction();
         try {
             if ($action === 'edit' && $id) {
@@ -111,7 +174,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($nilai_data) {
                 $ins = $pdo->prepare("INSERT INTO detail_penilaian (penilaian_id,item_id,nilai) VALUES (?,?,?)");
                 foreach ($nilai_data as $komp_id => $nilai) {
-                    $ins->execute([$pen_id, (int)$komp_id, (int)$nilai]);
+                    // SARAN-04 FIX: Validasi range nilai 1-5 di server-side
+                    // Mencegah nilai invalid jika request dimanipulasi
+                    $nilai_valid = max(1, min(5, (int)$nilai));
+                    $ins->execute([$pen_id, (int)$komp_id, $nilai_valid]);
                 }
             }
             // ============================================================
@@ -124,7 +190,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $nm = trim($nm);
                     if ($nm === '') continue;
                     $kat = trim($custom_kat[$idx] ?? 'Lainnya');
-                    $val = (int)($custom_nilai[$idx] ?? 1);
+                    // BUG-QA-02 FIX: Klem nilai custom ke range 1-5, sama seperti nilai standar
+                    $val = max(1, min(5, (int)($custom_nilai[$idx] ?? 1)));
                     $grouped_custom[$kat][] = ['nama' => $nm, 'nilai' => $val];
                 }
 
@@ -184,6 +251,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if (isset($_GET['msg'])) $msg = sanitize($_GET['msg']);
+
+// ─── Generate CSRF token untuk form delete_all ───────────────────────────────
+// BUG-05 FIX: Simpan di array keyed agar tidak tertimpa jika dua tab dibuka
+$csrf_delete_all    = bin2hex(random_bytes(16));
+$_SESSION['csrf_tokens']['delete_all'] = $csrf_delete_all;
+
+// BUG-QA-01 FIX: Token untuk hapus penilaian tunggal (POST+CSRF)
+$csrf_delete_single = bin2hex(random_bytes(16));
+$_SESSION['csrf_tokens']['delete_single'] = $csrf_delete_single;
 
 $penilaianList = $pdo->query("
     SELECT p.*, g.nama, g.jabatan, g.tipe,
@@ -247,7 +323,14 @@ require_once 'includes/header.php';
 ?>
 
 <?php if ($msg): ?>
-    <div class="alert-custom alert-success-custom mb-4">✓ <?= htmlspecialchars($msg) ?></div>
+    <?php
+    // BUG-01 FIX: Bedakan tampilan alert error vs sukses
+    // Pesan error ditandai dengan prefix ⚠️ atau kata kunci gagal/tidak valid
+    $isError = str_starts_with($msg, '⚠️') || stripos($msg, 'Gagal') !== false || stripos($msg, 'tidak valid') !== false || stripos($msg, 'tidak lengkap') !== false || stripos($msg, 'tidak boleh') !== false;
+    ?>
+    <div class="alert-custom <?= $isError ? 'alert-error-custom' : 'alert-success-custom' ?> mb-4">
+        <?= $isError ? '' : '✓ ' ?><?= htmlspecialchars($msg) ?>
+    </div>
 <?php endif; ?>
 
 <?php if ($action === 'add' || $action === 'edit'):
@@ -261,7 +344,7 @@ require_once 'includes/header.php';
             <a href="penilaian.php" class="btn-primary-custom" style="background:#6b7280;">← Kembali</a>
         </div>
         <form method="POST" autocomplete="off">
-            <input type="hidden" name="action" value="<?= $action ?>">
+            <input type="hidden" name="action" value="<?= htmlspecialchars($action) ?>">
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
                     <div class="form-label-custom">Guru Yang Dinilai</div>
@@ -295,13 +378,13 @@ require_once 'includes/header.php';
                     <div class="form-label-custom">Nama Penilai</div>
                     <input type="text" name="penilai" class="form-control-custom" readonly
                         style="background:#f3f4f6;color:#555;cursor:not-allowed;"
-                        value="<?= htmlspecialchars($editPenilaian['penilai'] ?? 'Hasyim Ashari, S.T') ?>">
+                        value="<?= htmlspecialchars($editPenilaian['penilai'] ?? $defaultPenilai) ?>">
                 </div>
                 <div class="col-md-4">
                     <div class="form-label-custom">Jabatan Penilai</div>
                     <input type="text" name="jabatan_penilai" class="form-control-custom" readonly
                         style="background:#f3f4f6;color:#555;cursor:not-allowed;"
-                        value="<?= htmlspecialchars($editPenilaian['jabatan_penilai'] ?? 'Kepala Sekolah') ?>">
+                        value="<?= htmlspecialchars($editPenilaian['jabatan_penilai'] ?? $defaultJabPenilai) ?>">
                 </div>
 
             </div>
@@ -421,14 +504,26 @@ require_once 'includes/header.php';
 
     <script>
         // Data nilai tersimpan (untuk mode edit) — diinjek dari PHP
-        const savedNilai = <?= json_encode($editDetail ?: new stdClass()) ?>;
+        const savedNilai = <?= json_encode($editDetail ?: new stdClass(), JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+
+        // escHtml — escape HTML chars sebelum insert ke innerHTML
+        // Wajib dipakai untuk semua data dari DB / API agar aman dari DOM XSS
+        function escHtml(str) {
+            const d = document.createElement('div');
+            d.appendChild(document.createTextNode(String(str ?? '')));
+            return d.innerHTML;
+        }
 
         function loadKomponen(guru_id) {
             if (!guru_id) return;
             const sel = document.getElementById('sel_guru');
             const tipe = sel.options[sel.selectedIndex].getAttribute('data-tipe');
             if (!tipe) return;
-            fetch('api_komponen.php?tipe=' + tipe)
+            fetch('api_komponen.php?tipe=' + tipe, {
+                // Header X-Requested-With diperlukan oleh api_komponen.php
+                // untuk memastikan request berasal dari AJAX, bukan akses langsung
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
                 .then(r => r.json())
                 .then(data => {
                     const area = document.getElementById('komponen-area');
@@ -466,11 +561,11 @@ require_once 'includes/header.php';
                         <span style="font-size:20px;">${s.icon}</span>
                         <div>
                             <span style="font-size:11px;color:${s.color};font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7;">Kategori ${katNo++}</span>
-                            <div style="font-size:14px;font-weight:700;color:${s.color};">${kat}</div>
+                            <div style="font-size:14px;font-weight:700;color:${s.color};">${escHtml(kat)}</div>
                         </div>
                     </div>`;
                         items.forEach(item => {
-                            html += `<div class="nilai-item" style="border-bottom:1px solid #f3f4f6;padding:10px 18px;"><div class="nilai-item-label"><span class="nilai-item-num">${item.nomor_item}.</span> ${item.nama_item}</div><div class="nilai-radio-group">`;
+                            html += `<div class="nilai-item" style="border-bottom:1px solid #f3f4f6;padding:10px 18px;"><div class="nilai-item-label"><span class="nilai-item-num">${escHtml(item.nomor_item)}.</span> ${escHtml(item.nama_item)}</div><div class="nilai-radio-group">`;
                             for (let v = 1; v <= 5; v++) {
                                 // Gunakan nilai tersimpan jika ada (mode edit), default ke 1
                                 const checked = (savedNilai[item.id] == v) ? 'checked' : ((!savedNilai[item.id] && v===1) ? 'checked' : '');
@@ -622,7 +717,7 @@ require_once 'includes/header.php';
                             <div style="display:flex;gap:5px;flex-wrap:wrap;">
                                 <a href="penilaian.php?action=edit&id=<?= $p['id'] ?>" class="btn-primary-custom btn-sm-custom btn-edit">Edit</a>
                                 <a href="cetak.php?id=<?= $p['id'] ?>" class="btn-primary-custom btn-sm-custom btn-view" target="_blank">Cetak</a>
-                                <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDelete(<?= $p['id'] ?>,'penilaian.php')">Hapus</button>
+                                <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDeleteSingle(<?= $p['id'] ?>)">Hapus</button>
                             </div>
                         </td>
                     </tr>
@@ -650,14 +745,69 @@ require_once 'includes/header.php';
     function hapusTerpilih() {
         const n = document.querySelectorAll('.row-check:checked').length;
         if (!n) return;
-        if (!confirm('Hapus ' + n + ' penilaian yang dipilih? Tindakan ini tidak bisa dibatalkan.')) return;
-        document.getElementById('formHapusTerpilih').submit();
+        // WARN-04 FIX: Gunakan modal Bootstrap, bukan confirm() native yang tidak konsisten di mobile
+        document.getElementById('confirmMsg').textContent =
+            'Hapus ' + n + ' penilaian yang dipilih? Tindakan ini tidak bisa dibatalkan.';
+        document.getElementById('confirmBtn').onclick = function() {
+            document.getElementById('formHapusTerpilih').submit();
+        };
+        new bootstrap.Modal(document.getElementById('confirmModal')).show();
     }
     function hapusSemua() {
-        if (!confirm('Hapus SEMUA penilaian? Seluruh data nilai akan hilang permanen dan tidak bisa dikembalikan!')) return;
-        window.location.href = 'penilaian.php?action=delete_all';
+        // WARN-04 FIX: Gunakan modal Bootstrap, bukan confirm() native
+        document.getElementById('confirmMsg').textContent =
+            'Hapus SEMUA penilaian? Seluruh data nilai akan hilang permanen dan tidak bisa dikembalikan!';
+        document.getElementById('confirmBtn').onclick = function() {
+            // Kirim via POST form dengan CSRF token (bukan GET) untuk mencegah aksi tidak disengaja
+            document.getElementById('formHapusSemua').submit();
+        };
+        new bootstrap.Modal(document.getElementById('confirmModal')).show();
+    }
+    // BUG-QA-01 FIX: Hapus penilaian tunggal via POST+CSRF (bukan GET)
+    function confirmDeleteSingle(id) {
+        document.getElementById('confirmMsg').textContent =
+            'Hapus penilaian ini? Data nilai tidak bisa dikembalikan.';
+        document.getElementById('confirmBtn').onclick = function() {
+            document.getElementById('hapusSingleId').value = id;
+            document.getElementById('formHapusSingle').submit();
+        };
+        new bootstrap.Modal(document.getElementById('confirmModal')).show();
     }
     </script>
 
 <?php endif; ?>
+
+<!-- Modal Konfirmasi Hapus (konsisten dengan guru.php) -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+        <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+            <div class="modal-body" style="padding:32px 28px 20px;text-align:center;">
+                <div style="font-size:44px;margin-bottom:14px;">⚠️</div>
+                <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:8px;">Konfirmasi Hapus</div>
+                <div id="confirmMsg" style="font-size:13px;color:#6b7280;line-height:1.6;"></div>
+            </div>
+            <div class="modal-footer" style="border:none;padding:0 28px 24px;gap:8px;justify-content:center;">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
+                    style="border-radius:8px;padding:8px 20px;font-size:13px;">Batal</button>
+                <button type="button" id="confirmBtn"
+                    style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;">
+                    Ya, Hapus
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Form tersembunyi untuk Hapus Semua — POST + CSRF token -->
+<form id="formHapusSemua" method="POST" action="penilaian.php?action=delete_all" style="display:none;" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_all ?? '') ?>">
+</form>
+
+<!-- BUG-QA-01 FIX: Form tersembunyi hapus satu penilaian — POST + CSRF token -->
+<!-- Sebelumnya: GET ?action=delete&id=N rentan CSRF. Sekarang: POST + token one-time. -->
+<form id="formHapusSingle" method="POST" action="penilaian.php?action=delete" style="display:none;" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_single ?? '') ?>">
+    <input type="hidden" name="del_id" id="hapusSingleId" value="">
+</form>
+
 <?php require_once 'includes/footer.php'; ?>

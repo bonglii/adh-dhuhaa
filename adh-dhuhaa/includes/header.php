@@ -689,6 +689,11 @@ $user = getCurrentUser();
         <div class="nav-separator"></div>
 
         <div class="nav-label">Akun</div>
+        <a href="ganti_password.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])=='ganti_password.php'?'active':'' ?>">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>
+            Ganti Password
+            <span class="nav-dot"></span>
+        </a>
         <a href="logout.php" class="nav-item">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Keluar
@@ -697,7 +702,7 @@ $user = getCurrentUser();
 
     <div class="sidebar-footer">
         <div class="user-info">
-            <div class="user-avatar"><?= strtoupper(substr($user['nama_lengkap'], 0, 1)) ?></div>
+            <div class="user-avatar"><?= htmlspecialchars(strtoupper(substr($user['nama_lengkap'], 0, 1))) ?></div>
             <div style="flex:1;min-width:0;">
                 <div class="user-name"><?= htmlspecialchars($user['nama_lengkap']) ?></div>
                 <div class="user-role"><?= ucfirst(str_replace('_', ' ', $user['role'])) ?></div>

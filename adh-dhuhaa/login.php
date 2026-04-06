@@ -17,6 +17,10 @@ if (isLoggedIn()) {
 
 // ─── Proses form login (POST) ────────────────────────────────────────────────
 $error = '';
+// Tampilkan pesan session timeout jika ada
+if (isset($_GET['msg'])) {
+    $error = sanitize($_GET['msg']);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Ambil & sanitasi input username; password tidak di-sanitize agar hash tidak rusak
     $username = sanitize($_POST['username'] ?? '');
@@ -30,14 +34,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Verifikasi password menggunakan password_verify (bcrypt)
         if ($user && password_verify($password, $user['password'])) {
-            // Login berhasil — simpan identitas ke session
+            // Login berhasil — regenerate session ID mencegah session fixation attack
+            session_regenerate_id(true);
+            // Bersihkan counter gagal, simpan identitas ke session
+            unset($_SESSION['_login_fail_count'], $_SESSION['_login_fail_time']);
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['user']    = $user;
+            // WARN-01 FIX: Cek apakah user wajib ganti password (akun default atau baru direset)
+            // Kolom must_change_password = 1 → redirect ke halaman ganti password
+            // Fallback ke 0 jika kolom belum ada (migrasi bertahap)
+            if (!empty($user['must_change_password'])) {
+                session_write_close();
+                header('Location: ganti_password.php');
+                exit;
+            }
             // Simpan session sebelum redirect agar data tidak hilang
             session_write_close();
             header('Location: dashboard.php');
             exit;
         } else {
+            // Catat percobaan gagal & tambah delay untuk menghambat brute-force
+            $_SESSION['_login_fail_count'] = ($_SESSION['_login_fail_count'] ?? 0) + 1;
+            $_SESSION['_login_fail_time']  = time();
+            // Delay progresif: gagal 1-2x = 1 detik, 3-4x = 2 detik, 5x+ = 3 detik
+            $fail = (int)$_SESSION['_login_fail_count'];
+            sleep($fail <= 2 ? 1 : ($fail <= 4 ? 2 : 3));
             $error = 'Username atau password salah!';
         }
     } else {

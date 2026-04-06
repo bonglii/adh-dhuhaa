@@ -3,7 +3,7 @@
 
 <!-- ─── Footer Copyright ──────────────────────────────────────────────────── -->
 <footer style="text-align:center;padding:14px 20px;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;margin-top:auto;background:#fafafa;">
-    © 2026 ISB Atma Luhur. All Rights Reserved
+    © <?= date('Y') ?> SD IT Qurani Adh-Dhuhaa. All Rights Reserved
 </footer>
 
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
