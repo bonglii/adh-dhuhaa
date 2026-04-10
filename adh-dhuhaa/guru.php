@@ -32,7 +32,7 @@ $id     = (int)($_GET['id'] ?? 0);
  */
 function catatHistory($pdo, $aksi, $guru_id, $data, $oleh, $keterangan = '')
 {
-    $stmt = $pdo->prepare("INSERT INTO guru_history (aksi, guru_id, nama, nrg, tmt_guru, jabatan, status_kepegawaian, tipe, oleh, keterangan)
+    $stmt = $pdo->prepare("INSERT INTO guru_history (aksi, id_guru, nama, nrg, tmt_guru, jabatan, status_kepegawaian, tipe, oleh, keterangan)
         VALUES (?,?,?,?,?,?,?,?,?,?)");
     $stmt->execute([
         $aksi,
@@ -79,11 +79,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') !== 'ti
     } else {
         if ($post_action === 'edit' && $post_id) {
             // Ambil data lama untuk keterangan perubahan
-            $lama = $pdo->prepare("SELECT * FROM guru WHERE id=?");
+            $lama = $pdo->prepare("SELECT * FROM guru WHERE id_guru=?");
             $lama->execute([$post_id]);
             $dataLama = $lama->fetch();
 
-            $stmt = $pdo->prepare("UPDATE guru SET nama=?,nrg=?,tmt_guru=?,jabatan=?,status_kepegawaian=?,tipe=? WHERE id=?");
+            $stmt = $pdo->prepare("UPDATE guru SET nama=?,nrg=?,tmt_guru=?,jabatan=?,status_kepegawaian=?,tipe=? WHERE id_guru=?");
             $stmt->execute([$nama, $nrg, $tmt, $jabatan, $status, $tipe, $post_id]);
 
             $ket = 'Sebelum: ' . ($dataLama['nama'] ?? '') . ' | ' . ($dataLama['jabatan'] ?? '') . ' | ' . ($dataLama['tipe'] ?? '');
@@ -102,39 +102,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') !== 'ti
     }
 }
 
-// ─── Handle POST: Hapus satu entri riwayat — dilindungi CSRF token ──────────
-// BUG-QA-01 FIX: Diubah dari GET ke POST+CSRF agar konsisten dan tidak rentan CSRF.
-if ($action === 'delete_history' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token_dikirim = $_POST['csrf_token'] ?? '';
-    $token_session = $_SESSION['csrf_tokens']['delete_history'] ?? '';
-    unset($_SESSION['csrf_tokens']['delete_history']); // one-time use
-    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
-        session_write_close();
-        header('Location: guru.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.') . '&tab=history');
-        exit;
-    }
-    $del_id = (int)($_POST['del_id'] ?? 0);
-    if ($del_id) {
-        $pdo->prepare("DELETE FROM guru_history WHERE id=?")->execute([$del_id]);
-    }
+// ─── Handle GET: Hapus satu entri riwayat ────────────────────────────────────
+if ($action === 'delete_history' && $id) {
+    $pdo->prepare("DELETE FROM guru_history WHERE id_guru_history=?")->execute([$id]);
     // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: guru.php?msg=' . urlencode('Riwayat berhasil dihapus!') . '&tab=history');
     exit;
 }
 
-// ─── Handle POST: Reset (hapus semua) riwayat — dilindungi CSRF token ──────────
-if ($action === 'reset_history' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token_dikirim = $_POST['csrf_token'] ?? '';
-    // BUG-05 FIX: Gunakan array keyed untuk mencegah race condition multi-tab
-    $token_session = $_SESSION['csrf_tokens']['reset_history'] ?? '';
-    unset($_SESSION['csrf_tokens']['reset_history']); // one-time use
-    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
-        session_write_close();
-        header('Location: guru.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.') . '&tab=history');
-        exit;
-    }
+// ─── Handle GET: Reset (hapus semua) riwayat ─────────────────────────────────
+if ($action === 'reset_history') {
     $pdo->exec("DELETE FROM guru_history");
+    // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: guru.php?msg=' . urlencode('Semua riwayat berhasil direset!') . '&tab=history');
     exit;
@@ -162,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'ti
             if ($cek->fetch()) {
                 $msg = '⚠️ Kode tipe sudah digunakan oleh tipe lain!';
             } else {
-                $pdo->prepare("UPDATE tipe_guru SET kode=?,label=?,urutan=? WHERE id=?")->execute([$kode,$label,$urutan,$post_id]);
+                $pdo->prepare("UPDATE tipe_guru SET kode=?,label=?,urutan=? WHERE id_tipe_guru=?")->execute([$kode,$label,$urutan,$post_id]);
                 unset($GLOBALS['_cache_tipe_guru']);
                 session_write_close();
                 header('Location: guru.php?msg=' . urlencode('Tipe guru berhasil diperbarui!') . '&tab=tipe');
@@ -184,24 +164,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'ti
     }
 }
 
-// ─── Handle POST: Hapus tipe guru — dilindungi CSRF token ────────────────────
-// BUG-QA-01 FIX: Diubah dari GET ke POST+CSRF.
-if ($action === 'delete_tipe' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token_dikirim = $_POST['csrf_token'] ?? '';
-    $token_session = $_SESSION['csrf_tokens']['delete_tipe'] ?? '';
-    unset($_SESSION['csrf_tokens']['delete_tipe']); // one-time use
-    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
-        session_write_close();
-        header('Location: guru.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.') . '&tab=tipe');
-        exit;
-    }
-    $del_id = (int)($_POST['del_id'] ?? 0);
-    $cekGuru = $pdo->prepare("SELECT COUNT(*) as n FROM guru WHERE tipe=(SELECT kode FROM tipe_guru WHERE id=?)");
-    $cekGuru->execute([$del_id]);
+// ─── Handle GET: Hapus tipe guru ─────────────────────────────────────────────
+if ($action === 'delete_tipe' && $id) {
+    $cekGuru = $pdo->prepare("SELECT COUNT(*) as n FROM guru WHERE tipe=(SELECT kode FROM tipe_guru WHERE id_tipe_guru=?)");
+    $cekGuru->execute([$id]);
     $nGuru = $cekGuru->fetch()['n'];
 
-    $cekKomp = $pdo->prepare("SELECT COUNT(*) as n FROM komponen_penilaian WHERE tipe_guru=(SELECT kode FROM tipe_guru WHERE id=?)");
-    $cekKomp->execute([$del_id]);
+    $cekKomp = $pdo->prepare("SELECT COUNT(*) as n FROM komponen WHERE type_guru=(SELECT kode FROM tipe_guru WHERE id_tipe_guru=?)");
+    $cekKomp->execute([$id]);
     $nKomp = $cekKomp->fetch()['n'];
 
     if ($nGuru > 0 || $nKomp > 0) {
@@ -210,35 +180,25 @@ if ($action === 'delete_tipe' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: guru.php?msg=' . urlencode("⚠️ Tipe tidak dapat dihapus karena masih digunakan oleh {$alasan}!") . '&tab=tipe');
         exit;
     }
-    $pdo->prepare("DELETE FROM tipe_guru WHERE id=?")->execute([$del_id]);
+    $pdo->prepare("DELETE FROM tipe_guru WHERE id_tipe_guru=?")->execute([$id]);
     unset($GLOBALS['_cache_tipe_guru']);
     session_write_close();
     header('Location: guru.php?msg=' . urlencode('Tipe guru berhasil dihapus!') . '&tab=tipe');
     exit;
 }
 
-// ─── Handle POST: Hapus satu data guru — dilindungi CSRF token ───────────────
-// BUG-QA-01 FIX: Diubah dari GET ke POST+CSRF.
-if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token_dikirim = $_POST['csrf_token'] ?? '';
-    $token_session = $_SESSION['csrf_tokens']['delete_guru'] ?? '';
-    unset($_SESSION['csrf_tokens']['delete_guru']); // one-time use
-    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
-        session_write_close();
-        header('Location: guru.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
-        exit;
-    }
-    $del_id = (int)($_POST['del_id'] ?? 0);
-    $row = $pdo->prepare("SELECT * FROM guru WHERE id=?");
-    $row->execute([$del_id]);
+// ─── Handle GET: Hapus satu data guru ────────────────────────────────────────
+if ($action === 'delete' && $id) {
+    $row = $pdo->prepare("SELECT * FROM guru WHERE id_guru=?");
+    $row->execute([$id]);
     $dataHapus = $row->fetch();
     $oleh = $user['nama_lengkap'] ?? 'Admin';
 
     if ($dataHapus) {
-        catatHistory($pdo, 'hapus', $del_id, $dataHapus, $oleh);
+        catatHistory($pdo, 'hapus', $id, $dataHapus, $oleh);
     }
 
-    $pdo->prepare("DELETE FROM guru WHERE id=?")->execute([$del_id]);
+    $pdo->prepare("DELETE FROM guru WHERE id_guru=?")->execute([$id]);
     // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: guru.php?msg=' . urlencode('Data guru berhasil dihapus!'));
@@ -247,34 +207,19 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['msg'])) $msg = sanitize($_GET['msg']);
 
-// ─── CSRF token untuk reset_history ─────────────────────────────────────────
-// BUG-05 FIX: Simpan di array keyed agar tidak tertimpa jika dua tab dibuka
-$csrf_reset_history = bin2hex(random_bytes(16));
-$_SESSION['csrf_tokens']['reset_history'] = $csrf_reset_history;
+// Filter tipe guru untuk tab data
+$filterTipeGuru = sanitize($_GET['filter_tipe_guru'] ?? '');
 
-// BUG-QA-01 FIX: Token untuk hapus tunggal (guru, riwayat, tipe) via POST+CSRF
-$csrf_delete_guru    = bin2hex(random_bytes(16));
-$csrf_delete_history = bin2hex(random_bytes(16));
-$csrf_delete_tipe    = bin2hex(random_bytes(16));
-$_SESSION['csrf_tokens']['delete_guru']    = $csrf_delete_guru;
-$_SESSION['csrf_tokens']['delete_history'] = $csrf_delete_history;
-$_SESSION['csrf_tokens']['delete_tipe']    = $csrf_delete_tipe;
+if ($filterTipeGuru) {
+    $stmtGuru = $pdo->prepare("SELECT * FROM guru WHERE tipe = ? ORDER BY nama");
+    $stmtGuru->execute([$filterTipeGuru]);
+    $guruList = $stmtGuru->fetchAll();
+} else {
+    $guruList = $pdo->query("SELECT * FROM guru ORDER BY tipe, nama")->fetchAll();
+}
 
-$guruList = $pdo->query("SELECT * FROM guru ORDER BY tipe, nama")->fetchAll();
-
-// ─── SARAN-02: Server-side pagination riwayat ─────────────────────────────────
-// Sebelumnya: hard limit 200 baris tanpa navigasi halaman
-// Sekarang: 50 baris per halaman dengan prev/next, filter tetap berjalan di JS
-$historyPerPage = 50;
-$historyPage    = max(1, (int)($_GET['hpage'] ?? 1));
-$historyTotal   = (int)$pdo->query("SELECT COUNT(*) FROM guru_history")->fetchColumn();
-$historyPages   = max(1, (int)ceil($historyTotal / $historyPerPage));
-$historyPage    = min($historyPage, $historyPages); // clamp ke halaman valid
-$historyOffset  = ($historyPage - 1) * $historyPerPage;
-
-$stmtHistory = $pdo->prepare("SELECT * FROM guru_history ORDER BY waktu DESC LIMIT ? OFFSET ?");
-$stmtHistory->execute([$historyPerPage, $historyOffset]);
-$historyList = $stmtHistory->fetchAll();
+// Ambil history (200 terakhir)
+$historyList = $pdo->query("SELECT * FROM guru_history ORDER BY waktu DESC LIMIT 200")->fetchAll();
 
 // Ambil tipe guru dari database (dinamis, bukan hardcode)
 $tipeList = getTipeGuru($pdo);
@@ -296,8 +241,8 @@ foreach ($tipeList as $kode => $label) {
 $tipeFullList = $pdo->query("
     SELECT t.*,
            (SELECT COUNT(*) FROM guru g WHERE g.tipe = t.kode) AS jumlah_guru,
-           (SELECT COUNT(*) FROM komponen_penilaian kp WHERE kp.tipe_guru = t.kode) AS jumlah_komponen
-    FROM tipe_guru t ORDER BY t.urutan, t.id
+           (SELECT COUNT(*) FROM komponen k WHERE k.type_guru = t.kode) AS jumlah_komponen
+    FROM tipe_guru t ORDER BY t.urutan, t.id_tipe_guru
 ")->fetchAll();
 
 // Hitung urutan berikutnya otomatis (max urutan + 1)
@@ -308,12 +253,7 @@ $pageTitle = 'Data Guru & GTK';
 require_once 'includes/header.php';
 ?>
 
-<?php if ($msg): ?>
-    <?php $isWarn = str_starts_with($msg, '⚠️'); ?>
-    <div class="alert-custom <?= $isWarn ? 'alert-error-custom' : 'alert-success-custom' ?> mb-4">
-        <?= $isWarn ? '' : '✓ ' ?><?= htmlspecialchars($msg) ?>
-    </div>
-<?php endif; ?>
+<!-- notifikasi ditangani oleh toast di footer -->
 
 <!-- Tab Navigation -->
 <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:2px solid #e5e7eb;">
@@ -324,8 +264,8 @@ require_once 'includes/header.php';
     <button id="tab-history" onclick="switchTab('history')"
         style="padding:10px 24px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;color:#6b7280;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;">
         🕓 Riwayat Perubahan
-        <?php if ($historyTotal > 0): ?>
-            <span id="history-badge" style="background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;border-radius:99px;margin-left:4px;"><?= $historyTotal ?></span>
+        <?php if (count($historyList) > 0): ?>
+            <span id="history-badge" style="background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;border-radius:99px;margin-left:4px;"><?= count($historyList) ?></span>
         <?php endif; ?>
     </button>
     <button id="tab-tipe" onclick="switchTab('tipe')"
@@ -342,6 +282,61 @@ require_once 'includes/header.php';
             <div class="card-title-custom">Daftar Guru & GTK</div>
             <button class="btn-primary-custom" onclick="openModal()">+ Tambah Guru</button>
         </div>
+
+        <?php
+        // Hitung jumlah guru per tipe untuk statistik
+        $jumlahPerTipe = [];
+        $allGuruCount = $pdo->query("SELECT COUNT(*) FROM guru")->fetchColumn();
+        foreach ($tipeList as $kode => $label) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM guru WHERE tipe = ?");
+            $stmt->execute([$kode]);
+            $jumlahPerTipe[$kode] = (int)$stmt->fetchColumn();
+        }
+        ?>
+
+        <!-- Filter Tipe Guru -->
+        <form method="GET" action="guru.php" id="formFilterTipe" style="margin-bottom:16px;">
+            <input type="hidden" name="tab" value="data">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                <span style="font-size:12px;font-weight:600;color:#6b7280;">Filter Tipe:</span>
+                <button type="submit" name="filter_tipe_guru" value=""
+                    class="btn-filter-tipe <?= $filterTipeGuru === '' ? 'active' : '' ?>"
+                    style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid <?= $filterTipeGuru==='' ? 'var(--hijau)' : '#d1d5db' ?>;background:<?= $filterTipeGuru==='' ? 'var(--hijau)' : '#fff' ?>;color:<?= $filterTipeGuru==='' ? '#fff' : '#374151' ?>;cursor:pointer;">
+                    Semua <span style="opacity:0.8;">(<?= $allGuruCount ?>)</span>
+                </button>
+                <?php foreach ($tipeList as $kode => $label):
+                    $isActive = $filterTipeGuru === $kode;
+                    $jml = $jumlahPerTipe[$kode] ?? 0;
+                ?>
+                    <button type="submit" name="filter_tipe_guru" value="<?= htmlspecialchars($kode) ?>"
+                        style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid <?= $isActive ? 'var(--hijau)' : '#d1d5db' ?>;background:<?= $isActive ? 'var(--hijau)' : '#fff' ?>;color:<?= $isActive ? '#fff' : '#374151' ?>;cursor:pointer;">
+                        <?= htmlspecialchars($label) ?> <span style="opacity:0.8;">(<?= $jml ?>)</span>
+                    </button>
+                <?php endforeach; ?>
+            </div>
+        </form>
+
+        <!-- Statistik jumlah per tipe -->
+        <?php if (!empty($jumlahPerTipe)): ?>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding:10px 14px;background:#f8fafc;border-radius:10px;border:1px solid #e5e7eb;">
+            <span style="font-size:11px;color:#9ca3af;font-weight:600;align-self:center;">📊 Jumlah Guru:</span>
+            <?php foreach ($tipeList as $kode => $label): $jml = $jumlahPerTipe[$kode] ?? 0; ?>
+            <span style="font-size:11.5px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:3px 10px;color:#374151;">
+                <strong style="color:var(--hijau);"><?= $jml ?></strong> <?= htmlspecialchars($label) ?>
+            </span>
+            <?php endforeach; ?>
+            <span style="font-size:11.5px;background:#e8f5ee;border:1px solid #d1fae5;border-radius:8px;padding:3px 10px;color:#1a4731;font-weight:700;">
+                Total: <?= $allGuruCount ?>
+            </span>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($filterTipeGuru): ?>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
+            Menampilkan <strong style="color:var(--hijau);"><?= count($guruList) ?></strong> guru tipe
+            <strong><?= htmlspecialchars($tipeList[$filterTipeGuru] ?? $filterTipeGuru) ?></strong>
+        </div>
+        <?php endif; ?>
 
         <table class="table table-hover datatable" style="font-size:13px;">
             <thead style="background:#f8fafc;">
@@ -368,8 +363,8 @@ require_once 'includes/header.php';
                         <td><span class="badge-tipe <?= htmlspecialchars($t['class']) ?>"><?= htmlspecialchars($t['label']) ?></span></td>
                         <td>
                             <div style="display:flex;gap:6px;">
-                                <button class="btn-primary-custom btn-sm-custom btn-edit" onclick='openEdit(<?= json_encode($g, JSON_HEX_APOS | JSON_HEX_TAG) ?>)'>Edit</button>
-                                <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDeleteGuru(<?= $g['id'] ?>, '<?= htmlspecialchars(addslashes($g['nama'])) ?>')">Hapus</button>
+                                <button class="btn-primary-custom btn-sm-custom btn-edit" onclick='openEdit(<?= json_encode($g) ?>)'>Edit</button>
+                                <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDelete(<?= $g['id_guru'] ?>,'guru.php')">Hapus</button>
                             </div>
                         </td>
                     </tr>
@@ -405,18 +400,11 @@ require_once 'includes/header.php';
             </div>
         </div>
 
-        <!-- Statistik ringkas — query langsung dari DB agar akurat meski history terpaginasi -->
+        <!-- Statistik ringkas -->
         <?php
-        $statsRow = $pdo->query("
-            SELECT
-                SUM(aksi = 'tambah') AS c_tambah,
-                SUM(aksi = 'edit')   AS c_edit,
-                SUM(aksi = 'hapus')  AS c_hapus
-            FROM guru_history
-        ")->fetch();
-        $cTambah = (int)($statsRow['c_tambah'] ?? 0);
-        $cEdit   = (int)($statsRow['c_edit']   ?? 0);
-        $cHapus  = (int)($statsRow['c_hapus']  ?? 0);
+        $cTambah = count(array_filter($historyList, fn($h) => $h['aksi'] === 'tambah'));
+        $cEdit   = count(array_filter($historyList, fn($h) => $h['aksi'] === 'edit'));
+        $cHapus  = count(array_filter($historyList, fn($h) => $h['aksi'] === 'hapus'));
         ?>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
             <div style="flex:1;min-width:120px;background:#dcfce7;border-radius:10px;padding:14px 18px;border-left:4px solid #16a34a;">
@@ -432,7 +420,7 @@ require_once 'includes/header.php';
                 <div style="font-size:11.5px;color:#991b1b;margin-top:2px;">🗑️ Dihapus</div>
             </div>
             <div style="flex:1;min-width:120px;background:#f0f9ff;border-radius:10px;padding:14px 18px;border-left:4px solid #0284c7;">
-                <div style="font-size:22px;font-weight:700;color:#0369a1;"><?= $historyTotal ?></div>
+                <div style="font-size:22px;font-weight:700;color:#0369a1;"><?= count($historyList) ?></div>
                 <div style="font-size:11.5px;color:#075985;margin-top:2px;">📋 Total Riwayat</div>
             </div>
         </div>
@@ -502,7 +490,7 @@ require_once 'includes/header.php';
                                     <?= $h['keterangan'] ? htmlspecialchars($h['keterangan']) : '<span style="color:#d1d5db;">—</span>' ?>
                                 </td>
                                 <td style="text-align:center;">
-                                    <button onclick="confirmDeleteHistory(<?= $h['id'] ?>, '<?= htmlspecialchars(addslashes($h['nama'])) ?>')"
+                                    <button onclick="confirmDeleteHistory(<?= $h['id_guru_history'] ?>, '<?= htmlspecialchars(addslashes($h['nama'])) ?>')"
                                         title="Hapus riwayat ini"
                                         style="background:#fee2e2;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;color:#b91c1c;font-size:13px;">
                                         🗑️
@@ -513,45 +501,8 @@ require_once 'includes/header.php';
                     </tbody>
                 </table>
             </div>
-            <!-- SARAN-02: Pagination server-side untuk riwayat -->
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 4px;flex-wrap:wrap;gap:8px;">
-                <div style="font-size:11.5px;color:#9ca3af;">
-                    Menampilkan <?= number_format($historyOffset + 1) ?>–<?= number_format(min($historyOffset + $historyPerPage, $historyTotal)) ?>
-                    dari <?= number_format($historyTotal) ?> riwayat
-                    <?= ($historyPages > 1) ? "(halaman $historyPage dari $historyPages)" : '' ?>
-                </div>
-                <?php if ($historyPages > 1): ?>
-                    <div style="display:flex;gap:4px;align-items:center;">
-                        <?php if ($historyPage > 1): ?>
-                            <a href="guru.php?tab=history&hpage=1"
-                               style="padding:5px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;text-decoration:none;background:#fff;">«</a>
-                            <a href="guru.php?tab=history&hpage=<?= $historyPage - 1 ?>"
-                               style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;text-decoration:none;background:#fff;">‹ Sebelumnya</a>
-                        <?php endif; ?>
-
-                        <?php
-                        // Tampilkan maksimal 5 nomor halaman di sekitar halaman aktif
-                        $pageStart = max(1, $historyPage - 2);
-                        $pageEnd   = min($historyPages, $historyPage + 2);
-                        for ($pg = $pageStart; $pg <= $pageEnd; $pg++):
-                            $isActive = $pg === $historyPage;
-                        ?>
-                            <a href="guru.php?tab=history&hpage=<?= $pg ?>"
-                               style="padding:5px 9px;border:1px solid <?= $isActive ? 'var(--hijau)' : '#e5e7eb' ?>;border-radius:6px;font-size:12px;
-                                      color:<?= $isActive ? '#fff' : '#374151' ?>;text-decoration:none;
-                                      background:<?= $isActive ? 'var(--hijau)' : '#fff' ?>;font-weight:<?= $isActive ? '600' : '400' ?>;">
-                                <?= $pg ?>
-                            </a>
-                        <?php endfor; ?>
-
-                        <?php if ($historyPage < $historyPages): ?>
-                            <a href="guru.php?tab=history&hpage=<?= $historyPage + 1 ?>"
-                               style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;text-decoration:none;background:#fff;">Berikutnya ›</a>
-                            <a href="guru.php?tab=history&hpage=<?= $historyPages ?>"
-                               style="padding:5px 9px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;text-decoration:none;background:#fff;">»</a>
-                        <?php endif; ?>
-                    </div>
-                <?php endif; ?>
+            <div style="padding:10px 4px;font-size:11.5px;color:#9ca3af;">
+                Menampilkan <?= count($historyList) ?> riwayat terakhir.
             </div>
         <?php endif; ?>
     </div>
@@ -659,12 +610,12 @@ require_once 'includes/header.php';
                                 <td>
                                     <div style="display:flex;gap:6px;">
                                         <button class="btn-primary-custom btn-sm-custom btn-edit"
-                                            onclick='openEditTipe(<?= json_encode($t, JSON_HEX_APOS | JSON_HEX_TAG) ?>)'>
+                                            onclick='openEditTipe(<?= json_encode($t) ?>)'>
                                             Edit
                                         </button>
                                         <?php if ($t['jumlah_guru'] == 0 && $t['jumlah_komponen'] == 0): ?>
                                             <button class="btn-primary-custom btn-sm-custom btn-delete"
-                                                onclick="confirmHapusTipe(<?= $t['id'] ?>, '<?= htmlspecialchars(addslashes($t['label'])) ?>')">
+                                                onclick="confirmHapusTipe(<?= $t['id_tipe_guru'] ?>, '<?= htmlspecialchars(addslashes($t['label'])) ?>')">
                                                 Hapus
                                             </button>
                                         <?php else: ?>
@@ -752,7 +703,7 @@ require_once 'includes/header.php';
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn-cancel" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="btn-primary-custom">Simpan Tipe</button>
                 </div>
             </form>
@@ -806,7 +757,7 @@ require_once 'includes/header.php';
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn-cancel" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="btn-primary-custom">Simpan Data</button>
                 </div>
             </form>
@@ -839,7 +790,7 @@ require_once 'includes/header.php';
         if (tab === 'history') {
             const badge = document.getElementById('history-badge');
             if (badge) badge.style.display = 'none';
-            localStorage.setItem('history_seen', '<?= $historyTotal ?>');
+            localStorage.setItem('history_seen', '<?= count($historyList) ?>');
         }
         if (tab === 'tipe') {
             const tipeBadge = document.querySelector('#tab-tipe span');
@@ -852,7 +803,7 @@ require_once 'includes/header.php';
         const badge = document.getElementById('history-badge');
         if (badge) {
             const seen = localStorage.getItem('history_seen');
-            if (seen === '<?= $historyTotal ?>') badge.style.display = 'none';
+            if (seen === '<?= count($historyList) ?>') badge.style.display = 'none';
         }
     })();
 
@@ -893,22 +844,10 @@ require_once 'includes/header.php';
         modal.show();
     }
 
-    // BUG-QA-01 FIX: hapus guru tunggal via POST+CSRF
-    function confirmDeleteGuru(id, nama) {
-        document.getElementById('confirmMsg').textContent = `Hapus data guru "${nama}"? Tindakan ini tidak bisa dibatalkan.`;
-        document.getElementById('confirmBtn').onclick = function() {
-            document.getElementById('hapusGuruId').value = id;
-            document.getElementById('formHapusGuru').submit();
-        };
-        const m = new bootstrap.Modal(document.getElementById('confirmModal'));
-        m.show();
-    }
-
     function confirmDeleteHistory(id, nama) {
+        document.getElementById('confirmMsg').textContent = `Hapus riwayat untuk "${nama}"? Tindakan ini tidak bisa dibatalkan.`;
         document.getElementById('confirmBtn').onclick = function() {
-            // BUG-QA-01 FIX: submit POST form+CSRF, bukan GET redirect
-            document.getElementById('hapusHistoryId').value = id;
-            document.getElementById('formHapusHistory').submit();
+            window.location.href = 'guru.php?action=delete_history&id=' + id;
         };
         const m = new bootstrap.Modal(document.getElementById('confirmModal'));
         m.show();
@@ -917,8 +856,7 @@ require_once 'includes/header.php';
     function confirmResetHistory() {
         document.getElementById('confirmMsg').textContent = 'Reset semua riwayat perubahan? Seluruh catatan akan dihapus permanen dan tidak bisa dikembalikan.';
         document.getElementById('confirmBtn').onclick = function() {
-            // Kirim via POST form + CSRF token (bukan GET)
-            document.getElementById('formResetHistory').submit();
+            window.location.href = 'guru.php?action=reset_history';
         };
         const m = new bootstrap.Modal(document.getElementById('confirmModal'));
         m.show();
@@ -960,9 +898,7 @@ require_once 'includes/header.php';
     function confirmHapusTipe(id, label) {
         document.getElementById('confirmMsg').textContent = `Hapus tipe "${label}"? Tindakan ini tidak bisa dibatalkan.`;
         document.getElementById('confirmBtn').onclick = function() {
-            // BUG-QA-01 FIX: submit POST form+CSRF, bukan GET redirect
-            document.getElementById('hapusTipeId').value = id;
-            document.getElementById('formHapusTipe').submit();
+            window.location.href = 'guru.php?action=delete_tipe&id=' + id;
         };
         const m = new bootstrap.Modal(document.getElementById('confirmModal'));
         m.show();
@@ -979,34 +915,15 @@ require_once 'includes/header.php';
                 <div id="confirmMsg" style="font-size:13px;color:#6b7280;line-height:1.6;"></div>
             </div>
             <div class="modal-footer" style="border:none;padding:0 28px 24px;gap:8px;justify-content:center;">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
+                <button type="button" class="btn-cancel btn-sm-custom" data-bs-dismiss="modal"
                     style="border-radius:8px;padding:8px 20px;font-size:13px;">Batal</button>
                 <button type="button" id="confirmBtn"
-                    style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;">
+                    class="btn-danger-custom btn-sm-custom">
                     Ya, Hapus
                 </button>
             </div>
         </div>
     </div>
 </div>
-
-<!-- Form tersembunyi untuk Reset History — POST + CSRF token -->
-<form id="formResetHistory" method="POST" action="guru.php?action=reset_history" style="display:none;" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_reset_history ?? '') ?>">
-</form>
-
-<!-- BUG-QA-01 FIX: Form-form tersembunyi hapus tunggal — POST + CSRF token -->
-<form id="formHapusGuru" method="POST" action="guru.php?action=delete" style="display:none;" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_guru ?? '') ?>">
-    <input type="hidden" name="del_id" id="hapusGuruId" value="">
-</form>
-<form id="formHapusHistory" method="POST" action="guru.php?action=delete_history" style="display:none;" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_history ?? '') ?>">
-    <input type="hidden" name="del_id" id="hapusHistoryId" value="">
-</form>
-<form id="formHapusTipe" method="POST" action="guru.php?action=delete_tipe" style="display:none;" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_tipe ?? '') ?>">
-    <input type="hidden" name="del_id" id="hapusTipeId" value="">
-</form>
 
 <?php require_once 'includes/footer.php'; ?>

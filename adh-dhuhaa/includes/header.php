@@ -576,11 +576,12 @@ $user = getCurrentUser();
 
         .nilai-item {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             padding: 10px 0;
             border-bottom: 1px solid var(--border);
             gap: 20px;
+            overflow: hidden;
         }
 
         .nilai-item:last-child { border-bottom: none; padding-bottom: 0; }
@@ -589,6 +590,10 @@ $user = getCurrentUser();
             font-size: 13px;
             color: var(--teks);
             flex: 1;
+            min-width: 0;
+            word-break: break-all;
+            overflow-wrap: anywhere;
+            white-space: normal;
         }
 
         .nilai-item-num {
@@ -634,6 +639,242 @@ $user = getCurrentUser();
             .sidebar { transform: translateX(-100%); }
             .main-wrap { margin-left: 0; }
         }
+
+        /* ═══════════════════════════════════════════════════════
+           BUTTON SYSTEM — Unified & Beautiful
+        ═══════════════════════════════════════════════════════ */
+
+        /* Base button override — hapus Bootstrap btn-light yg jelek */
+        .btn-light {
+            background: #f3f4f6 !important;
+            color: #374151 !important;
+            border: 1.5px solid #e5e7eb !important;
+            border-radius: 9px !important;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            padding: 8px 18px !important;
+            transition: all .18s !important;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-light:hover {
+            background: #e9eaec !important;
+            border-color: #d1d5db !important;
+            color: #1f2937 !important;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0,0,0,.07) !important;
+        }
+        .btn-light:active { transform: translateY(0) !important; }
+
+        .btn-secondary {
+            background: linear-gradient(135deg,#6b7280,#4b5563) !important;
+            color:#fff !important;
+            border:none !important;
+            border-radius:9px !important;
+            font-size:13px !important;
+            font-weight:500 !important;
+            padding:8px 18px !important;
+            transition:all .18s !important;
+            display:inline-flex;
+            align-items:center;
+            gap:6px;
+        }
+        .btn-secondary:hover {
+            background: linear-gradient(135deg,#4b5563,#374151) !important;
+            transform:translateY(-1px);
+            box-shadow:0 4px 12px rgba(75,85,99,.3) !important;
+        }
+
+        /* Tombol Kembali / Back — abu-abu elegan */
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 18px;
+            background: #f3f4f6;
+            color: #374151;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .18s;
+        }
+        .btn-back:hover {
+            background: #fff;
+            border-color: #d1d5db;
+            color: #111827;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(0,0,0,.07);
+        }
+
+        /* Tombol Batal di modal */
+        .btn-cancel {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 18px;
+            background: #fff;
+            color: #6b7280;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .18s;
+        }
+        .btn-cancel:hover {
+            background: #fef2f2;
+            border-color: #fca5a5;
+            color: #dc2626;
+        }
+
+        /* Tombol Hapus Semua / Danger */
+        .btn-danger-custom {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 18px;
+            background: linear-gradient(135deg,#ef4444,#dc2626);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .18s;
+        }
+        .btn-danger-custom:hover {
+            background: linear-gradient(135deg,#dc2626,#b91c1c);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(220,38,38,.35);
+            color: #fff;
+        }
+        .btn-danger-custom:active { transform: translateY(0); }
+
+        /* Tombol Warning / Outline */
+        .btn-outline-custom {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 14px;
+            background: transparent;
+            color: var(--hijau);
+            border: 1.5px solid var(--hijau);
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .18s;
+        }
+        .btn-outline-custom:hover {
+            background: var(--hijau-pale);
+            color: var(--hijau);
+        }
+
+        /* btn-primary-custom — buat lebih mewah */
+        .btn-primary-custom {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, var(--hijau) 0%, var(--hijau-muda) 100%);
+            color: #fff !important;
+            border: none;
+            border-radius: 10px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .2s cubic-bezier(.4,0,.2,1);
+            box-shadow: 0 2px 6px rgba(26,71,49,.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-primary-custom::after {
+            content:'';
+            position:absolute;
+            inset:0;
+            background:linear-gradient(180deg,rgba(255,255,255,.12) 0%,transparent 100%);
+            pointer-events:none;
+        }
+        .btn-primary-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(26,71,49,.32);
+            color: #fff !important;
+        }
+        .btn-primary-custom:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(26,71,49,.2); }
+
+        .btn-sm-custom {
+            padding: 6px 13px !important;
+            font-size: 12px !important;
+            border-radius: 8px !important;
+            gap: 5px !important;
+        }
+
+        .btn-edit {
+            background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+            box-shadow: 0 2px 6px rgba(59,130,246,.25) !important;
+        }
+        .btn-edit:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            box-shadow: 0 5px 14px rgba(59,130,246,.4) !important;
+        }
+
+        .btn-delete {
+            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+            box-shadow: 0 2px 6px rgba(239,68,68,.25) !important;
+        }
+        .btn-delete:hover {
+            background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+            box-shadow: 0 5px 14px rgba(239,68,68,.4) !important;
+        }
+
+        .btn-view {
+            background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+            box-shadow: 0 2px 6px rgba(14,165,233,.25) !important;
+        }
+        .btn-view:hover {
+            background: linear-gradient(135deg, #0284c7, #0369a1) !important;
+            box-shadow: 0 5px 14px rgba(14,165,233,.4) !important;
+        }
+
+        /* Tombol logout di topbar */
+        .btn-logout {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--hijau-pale);
+            color: var(--hijau);
+            border: 1.5px solid rgba(26,71,49,.15);
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .2s;
+        }
+        .btn-logout:hover {
+            background: var(--hijau);
+            color: #fff;
+            border-color: var(--hijau);
+            box-shadow: 0 4px 12px rgba(26,71,49,.3);
+            transform: translateY(-1px);
+        }
+
+        /* Action button group spacing */
+        .btn-group-action {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -661,13 +902,18 @@ $user = getCurrentUser();
             Data Guru & GTK
             <span class="nav-dot"></span>
         </a>
+        <a href="item.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])=='item.php'?'active':'' ?>">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            Tambah Point Penilaian
+            <span class="nav-dot"></span>
+        </a>
 
         <div class="nav-separator"></div>
 
         <div class="nav-label">Penilaian</div>
-        <a href="komponen.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])=='komponen.php'?'active':'' ?>">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2z"/><path d="M7 7h.01"/></svg>
-            Komponen Penilaian
+        <a href="custom_penilaian.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])=='custom_penilaian.php'?'active':'' ?>">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>
+            Buat Pertanyaan Penilaian
             <span class="nav-dot"></span>
         </a>
         <a href="penilaian.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])=='penilaian.php'?'active':'' ?>">
@@ -689,11 +935,6 @@ $user = getCurrentUser();
         <div class="nav-separator"></div>
 
         <div class="nav-label">Akun</div>
-        <a href="ganti_password.php" class="nav-item <?= basename($_SERVER['PHP_SELF'])=='ganti_password.php'?'active':'' ?>">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>
-            Ganti Password
-            <span class="nav-dot"></span>
-        </a>
         <a href="logout.php" class="nav-item">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Keluar
@@ -702,7 +943,7 @@ $user = getCurrentUser();
 
     <div class="sidebar-footer">
         <div class="user-info">
-            <div class="user-avatar"><?= htmlspecialchars(strtoupper(substr($user['nama_lengkap'], 0, 1))) ?></div>
+            <div class="user-avatar"><?= strtoupper(substr($user['nama_lengkap'], 0, 1)) ?></div>
             <div style="flex:1;min-width:0;">
                 <div class="user-name"><?= htmlspecialchars($user['nama_lengkap']) ?></div>
                 <div class="user-role"><?= ucfirst(str_replace('_', ' ', $user['role'])) ?></div>

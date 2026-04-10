@@ -2,244 +2,105 @@
 /**
  * penilaian.php — Halaman Penilaian Kinerja Guru
  *
- * Fitur:
- *  - Tambah & edit penilaian per guru dan per periode
- *  - Input nilai per komponen/indikator (skala 0-5)
- *  - Tambah kategori & item penilaian kustom langsung dari form
- *  - Hapus satu, pilih banyak, atau hapus semua data penilaian
- *  - Kalkulasi rata-rata otomatis dan predikat akhir
- *
- * Semua logika PHP diproses SEBELUM output HTML apapun.
+ * Alur (FIXED):
+ *  1. Pilih Nama Guru langsung (semua guru tampil, tipe guru terisi otomatis)
+ *  2. Dropdown Tahun Ajaran muncul otomatis sesuai tipe guru yang bersangkutan
+ *  3. Form penilaian auto-load dari tabel isi → item
+ *  4. Nilai disimpan ke tabel hasil (id_item) — FIXED dari id_item
  */
 
-// ─── Inisialisasi: load konfigurasi & wajib login ────────────────────────────
 require_once 'includes/config.php';
 requireLogin();
 
-// ─── Ambil data user yang sedang login sebagai penilai ───────────────────────
-// WARN-05 FIX: Nama dan jabatan penilai diambil dari session user,
-// bukan hardcode 'Hasyim Ashari, S.T' yang akan salah jika kepala sekolah berganti.
-$currentUser     = getCurrentUser();
-$defaultPenilai  = $currentUser['nama_lengkap'] ?? 'Kepala Sekolah';
-// Mapping role ke jabatan penilai yang tampil di form dan cetak
-$jabatanMap = [
-    'kepala_sekolah' => 'Kepala Sekolah',
-    'admin'          => 'Administrator',
-];
-$defaultJabPenilai = $jabatanMap[$currentUser['role'] ?? ''] ?? 'Kepala Sekolah';
-
-// ─── Baca parameter aksi & ID dari URL ──────────────────────────────────────
 $msg    = '';
-// Whitelist $action agar tidak bisa di-inject — hanya nilai valid yang diterima
-$_allowedActions = ['', 'add', 'edit', 'delete', 'delete_all', 'delete_selected'];
-$action = in_array($_GET['action'] ?? '', $_allowedActions) ? ($_GET['action'] ?? '') : '';
+$action = $_GET['action'] ?? '';
 $id     = (int)($_GET['id'] ?? 0);
 
-// ─── Handle POST: Hapus satu penilaian (dengan CSRF token) ───────────────────
-// BUG-QA-01 FIX: Diubah dari GET ke POST+CSRF agar tidak rentan CSRF attack.
-// Sebelumnya: ?action=delete&id=N via GET bisa dipicu dari link eksternal.
-if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token_dikirim = $_POST['csrf_token'] ?? '';
-    $token_session = $_SESSION['csrf_tokens']['delete_single'] ?? '';
-    unset($_SESSION['csrf_tokens']['delete_single']); // one-time use
-    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
-        session_write_close();
-        header('Location: penilaian.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
-        exit;
-    }
-    $del_id = (int)($_POST['del_id'] ?? 0);
-    if ($del_id) {
-        $pdo->prepare("DELETE FROM penilaian WHERE id=?")->execute([$del_id]);
-    }
-    // Simpan session sebelum redirect agar data tidak hilang
+if ($action === 'delete' && $id) {
+    $pdo->prepare("DELETE FROM penilaian WHERE id_penilaian=?")->execute([$id]);
     session_write_close();
     header('Location: penilaian.php?msg=' . urlencode('Penilaian berhasil dihapus!'));
     exit;
 }
 
-// ─── Handle GET: Hapus semua penilaian ───────────────────────────────────────
-// ─── Handle POST: Hapus semua penilaian (dengan CSRF token) ──────────────────
-// Menggunakan POST + CSRF token agar tidak bisa dipicu via GET/link biasa.
-if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token_dikirim = $_POST['csrf_token'] ?? '';
-    // BUG-05 FIX: Gunakan array keyed untuk mencegah race condition multi-tab.
-    // Dulu: $_SESSION['csrf_delete_all'] ditimpa jika dua tab dibuka bersamaan.
-    // Sekarang: setiap token memiliki key unik sendiri berdasarkan value-nya.
-    $token_session = $_SESSION['csrf_tokens']['delete_all'] ?? '';
-    unset($_SESSION['csrf_tokens']['delete_all']); // one-time use
-
-    if (!$token_dikirim || !hash_equals($token_session, $token_dikirim)) {
+if ($action === 'delete_all') {
+    // Wajib POST agar tidak bisa dipicu hanya dari URL/link
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         session_write_close();
-        header('Location: penilaian.php?msg=' . urlencode('⚠️ Permintaan tidak valid! Silakan coba lagi.'));
+        header('Location: penilaian.php');
         exit;
     }
-    $pdo->exec("DELETE FROM penilaian");
-    // Simpan session sebelum redirect agar data tidak hilang
+    $dWhereAll  = ['1=1'];
+    $dParamsAll = [];
+    $dTA   = sanitize($_POST['filter_ta']   ?? '');
+    $dTipe = sanitize($_POST['filter_tipe'] ?? '');
+    $dGuru = (int)($_POST['filter_guru']    ?? 0);
+    if ($dTA)   { $dWhereAll[] = 'periode = ?';              $dParamsAll[] = $dTA; }
+    if ($dTipe) { $dWhereAll[] = 'id_guru IN (SELECT id_guru FROM guru WHERE tipe = ?)'; $dParamsAll[] = $dTipe; }
+    if ($dGuru) { $dWhereAll[] = 'id_guru = ?';              $dParamsAll[] = $dGuru; }
+    $dSQL = 'DELETE FROM penilaian WHERE ' . implode(' AND ', $dWhereAll);
+    $pdo->prepare($dSQL)->execute($dParamsAll);
     session_write_close();
-    header('Location: penilaian.php?msg=' . urlencode('Semua penilaian berhasil dihapus!'));
+    header('Location: penilaian.php?msg=' . urlencode('Penilaian berhasil dihapus!'));
     exit;
 }
 
-// ─── Handle POST: Hapus penilaian yang dipilih via checkbox ──────────────────
 if ($action === 'delete_selected' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sanitasi: pastikan semua ID adalah integer positif
     $ids = array_filter(array_map('intval', $_POST['selected_ids'] ?? []));
     if ($ids) {
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $pdo->prepare("DELETE FROM penilaian WHERE id IN ($placeholders)")->execute($ids);
-        $jumlah = count($ids);
-        // Simpan session sebelum redirect agar data tidak hilang
+        $pl = implode(',', array_fill(0, count($ids), '?'));
+        $pdo->prepare("DELETE FROM penilaian WHERE id_penilaian IN ($pl)")->execute($ids);
         session_write_close();
-        header('Location: penilaian.php?msg=' . urlencode("$jumlah penilaian berhasil dihapus!"));
+        header('Location: penilaian.php?msg=' . urlencode(count($ids) . ' penilaian berhasil dihapus!'));
         exit;
     }
-    // Simpan session sebelum redirect agar data tidak hilang
     session_write_close();
     header('Location: penilaian.php?msg=' . urlencode('Tidak ada data yang dipilih.'));
     exit;
 }
 
-// ─── Handle POST: Simpan / update penilaian baru ─────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $guru_id      = (int)($_POST['guru_id'] ?? 0);
-    $periode_awal = $_POST['periode_awal'] ?? '';
-    $periode_akhir = $_POST['periode_akhir'] ?? '';
-    $tgl          = $_POST['tanggal_penilaian'] ?? '';
-    $penilai      = sanitize($_POST['penilai'] ?? '');
-    $jab_pen      = sanitize($_POST['jabatan_penilai'] ?? '');
-    $catatan      = sanitize($_POST['catatan'] ?? '');
-    $nilai_data   = $_POST['nilai'] ?? [];
-    $custom_kat   = $_POST['custom_kategori'] ?? [];
-    $custom_item  = $_POST['custom_item'] ?? [];
-    $custom_nilai = $_POST['custom_nilai'] ?? [];
+// ================================================================
+// SIMPAN PENILAIAN — FIXED: simpan ke id_item bukan id_item
+// ================================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_penilaian'])) {
+    $id_guru     = (int)($_POST['id_guru'] ?? 0);
+    $id_komponen = (int)($_POST['id_komponen'] ?? 0);
+    $tgl         = $_POST['tanggal_penilaian'] ?? '';
+    $penilai     = sanitize($_POST['penilai'] ?? '');
+    $jab_pen     = sanitize($_POST['jabatan_penilai'] ?? '');
+    $catatan     = sanitize($_POST['catatan'] ?? '');
+    $nilai_data  = $_POST['nilai'] ?? [];  // key = id_item
 
-    // Buat label periode otomatis dari tanggal awal-akhir
     $periode = '';
-    if ($periode_awal && $periode_akhir) {
-        $bulan_id = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April',
-                     '05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus',
-                     '09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
-        [$y1,$m1,$d1] = explode('-', $periode_awal);
-        [$y2,$m2,$d2] = explode('-', $periode_akhir);
-        $periode = ($bulan_id[$m1] ?? $m1).' '.$y1.' s.d '.($bulan_id[$m2] ?? $m2).' '.$y2;
+    if ($id_komponen) {
+        $stmt = $pdo->prepare("SELECT ta_komponen FROM komponen WHERE id_komponen = ?");
+        $stmt->execute([$id_komponen]);
+        $periode = $stmt->fetchColumn() ?: '';
     }
 
-    // Ambil tipe guru untuk menyimpan kategori tambahan ke tabel yang tepat
-    $guru_tipe = 'guru_kelas';
-    if ($guru_id) {
-        $gs = $pdo->prepare("SELECT tipe FROM guru WHERE id=?");
-        $gs->execute([$guru_id]);
-        $guru_tipe = $gs->fetchColumn() ?: 'guru_kelas';
-    }
-
-    // ─── Validasi urutan tanggal ─────────────────────────────────────────────
-    if ($periode_awal && $periode_akhir && $periode_awal > $periode_akhir) {
-        $msg = '⚠️ Tanggal awal periode tidak boleh lebih besar dari tanggal akhir periode!';
-    }
-
-    // ─── BUG-02 FIX: Cek duplikat berlaku untuk tambah DAN edit ──────────────
-    // Saat edit: exclude record sendiri (id != $id) agar tidak false positive
-    // Saat tambah: exclude tidak diperlukan (id = 0 tidak ada di DB)
-    if (!$msg && $guru_id && $periode_awal && $periode_akhir) {
-        $dupCek = $pdo->prepare("SELECT COUNT(*) FROM penilaian WHERE guru_id=? AND periode_awal=? AND periode_akhir=? AND id != ?");
-        $dupCek->execute([$guru_id, $periode_awal, $periode_akhir, $id ?: 0]);
-        if ($dupCek->fetchColumn() > 0) {
-            $msg = '⚠️ Penilaian untuk guru ini pada periode yang sama sudah ada! Gunakan fitur Edit untuk memperbarui.';
-        }
-    }
-
-    // ─── Validasi kelengkapan data ────────────────────────────────────────────
-    if (!$msg && (!$guru_id || !$periode_awal || !$periode_akhir || !$tgl)) {
-        $msg = '⚠️ Data tidak lengkap! Guru, periode, dan tanggal wajib diisi.';
-    }
-
-    // ─── BUG-03 FIX: Pisahkan validasi dan eksekusi secara eksplisit ─────────
-    // Sebelumnya: else { } hanya berjalan jika $msg kosong dari validasi terakhir saja
-    // Sekarang: blok eksekusi hanya berjalan jika tidak ada pesan error sama sekali
-    if (!$msg) {
+    if (!$id_guru || !$id_komponen || !$tgl) {
+        $msg = 'Data tidak lengkap! Guru, tahun ajaran, dan tanggal wajib diisi.';
+    } else {
         $pdo->beginTransaction();
         try {
             if ($action === 'edit' && $id) {
-                // Update data penilaian yang sudah ada
-                $stmt = $pdo->prepare("UPDATE penilaian SET guru_id=?,periode=?,periode_awal=?,periode_akhir=?,tanggal_penilaian=?,penilai=?,jabatan_penilai=?,catatan=? WHERE id=?");
-                $stmt->execute([$guru_id, $periode, $periode_awal, $periode_akhir, $tgl, $penilai, $jab_pen, $catatan, $id]);
-                $pdo->prepare("DELETE FROM detail_penilaian WHERE penilaian_id=?")->execute([$id]);
+                $stmt = $pdo->prepare("UPDATE penilaian SET id_guru=?,id_komponen=?,periode=?,tanggal_penilaian=?,penilai=?,jabatan_penilai=?,catatan=? WHERE id_penilaian=?");
+                $stmt->execute([$id_guru, $id_komponen, $periode, $tgl, $penilai, $jab_pen, $catatan, $id]);
+                $pdo->prepare("DELETE FROM hasil WHERE id_penilaian=?")->execute([$id]);
                 $pen_id = $id;
             } else {
-                // Tambah penilaian baru
-                $stmt = $pdo->prepare("INSERT INTO penilaian (guru_id,periode,periode_awal,periode_akhir,tanggal_penilaian,penilai,jabatan_penilai,catatan) VALUES (?,?,?,?,?,?,?,?)");
-                $stmt->execute([$guru_id, $periode, $periode_awal, $periode_akhir, $tgl, $penilai, $jab_pen, $catatan]);
+                $stmt = $pdo->prepare("INSERT INTO penilaian (id_guru,id_komponen,periode,tanggal_penilaian,penilai,jabatan_penilai,catatan) VALUES (?,?,?,?,?,?,?)");
+                $stmt->execute([$id_guru, $id_komponen, $periode, $tgl, $penilai, $jab_pen, $catatan]);
                 $pen_id = $pdo->lastInsertId();
             }
+            // FIXED: simpan ke kolom id_item
             if ($nilai_data) {
-                $ins = $pdo->prepare("INSERT INTO detail_penilaian (penilaian_id,item_id,nilai) VALUES (?,?,?)");
-                foreach ($nilai_data as $komp_id => $nilai) {
-                    // SARAN-04 FIX: Validasi range nilai 1-5 di server-side
-                    // Mencegah nilai invalid jika request dimanipulasi
-                    $nilai_valid = max(1, min(5, (int)$nilai));
-                    $ins->execute([$pen_id, (int)$komp_id, $nilai_valid]);
-                }
-            }
-            // ============================================================
-            // Simpan kategori tambahan ke komponen_penilaian + item
-            // ============================================================
-            if ($custom_item) {
-                // Kelompokkan item berdasarkan kategori
-                $grouped_custom = [];
-                foreach ($custom_item as $idx => $nm) {
-                    $nm = trim($nm);
-                    if ($nm === '') continue;
-                    $kat = trim($custom_kat[$idx] ?? 'Lainnya');
-                    // BUG-QA-02 FIX: Klem nilai custom ke range 1-5, sama seperti nilai standar
-                    $val = max(1, min(5, (int)($custom_nilai[$idx] ?? 1)));
-                    $grouped_custom[$kat][] = ['nama' => $nm, 'nilai' => $val];
-                }
-
-                $ins_det_c = $pdo->prepare("INSERT INTO detail_penilaian (penilaian_id, item_id, nilai) VALUES (?,?,?)");
-
-                foreach ($grouped_custom as $kat => $items_custom) {
-                    // Cari komponen yang sudah ada untuk tipe guru ini
-                    $ck_komp = $pdo->prepare("SELECT id, urutan FROM komponen_penilaian WHERE tipe_guru=? AND nama_kategori=?");
-                    $ck_komp->execute([$guru_tipe, $kat]);
-                    $komp_row = $ck_komp->fetch();
-
-                    if ($komp_row) {
-                        $komp_id     = $komp_row['id'];
-                        $komp_urutan = $komp_row['urutan'];
-                    } else {
-                        // Buat indikator baru di tabel komponen_penilaian
-                        $max_u = $pdo->prepare("SELECT COALESCE(MAX(urutan), 0) + 1 FROM komponen_penilaian WHERE tipe_guru=?");
-                        $max_u->execute([$guru_tipe]);
-                        $komp_urutan = (int)$max_u->fetchColumn();
-                        $pdo->prepare("INSERT INTO komponen_penilaian (tipe_guru, nama_kategori, urutan, is_tambahan) VALUES (?,?,?,1)")
-                            ->execute([$guru_tipe, $kat, $komp_urutan]);
-                        $komp_id = (int)$pdo->lastInsertId();
-                    }
-
-                    // Simpan setiap poin ke tabel item & catat nilainya
-                    $ck_item  = $pdo->prepare("SELECT id FROM item WHERE komponen_id=? AND nama_item=?");
-                    $ins_item = $pdo->prepare("INSERT INTO item (komponen_id, nomor_item, nama_item, urutan) VALUES (?,?,?,?)");
-                    $cnt_item = $pdo->prepare("SELECT COUNT(*) FROM item WHERE komponen_id=?");
-
-                    foreach ($items_custom as $it) {
-                        // Cek duplikat item
-                        $ck_item->execute([$komp_id, $it['nama']]);
-                        $item_id = $ck_item->fetchColumn();
-
-                        if (!$item_id) {
-                            $cnt_item->execute([$komp_id]);
-                            $item_seq  = (int)$cnt_item->fetchColumn() + 1;
-                            $nomor_otomatis = $komp_urutan . '.' . $item_seq;
-                            $ins_item->execute([$komp_id, $nomor_otomatis, $it['nama'], $item_seq]);
-                            $item_id = (int)$pdo->lastInsertId();
-                        }
-
-                        $ins_det_c->execute([$pen_id, $item_id, $it['nilai']]);
-                    }
+                $ins = $pdo->prepare("INSERT INTO hasil (id_penilaian, id_item, nilai) VALUES (?,?,?)");
+                foreach ($nilai_data as $iid => $nilai) {
+                    $ins->execute([$pen_id, (int)$iid, (int)$nilai]);
                 }
             }
             $pdo->commit();
-            // Simpan session sebelum redirect agar data tidak hilang
             session_write_close();
             header('Location: penilaian.php?msg=' . urlencode('Penilaian berhasil disimpan!'));
             exit;
@@ -252,562 +113,622 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['msg'])) $msg = sanitize($_GET['msg']);
 
-// ─── Generate CSRF token untuk form delete_all ───────────────────────────────
-// BUG-05 FIX: Simpan di array keyed agar tidak tertimpa jika dua tab dibuka
-$csrf_delete_all    = bin2hex(random_bytes(16));
-$_SESSION['csrf_tokens']['delete_all'] = $csrf_delete_all;
+// ================================================================
+// FILTER — ambil dari GET, default kosong (tampilkan semua)
+// ================================================================
+$filterTA   = sanitize($_GET['filter_ta']   ?? '');
+$filterTipe = sanitize($_GET['filter_tipe'] ?? '');
+$filterGuru = (int)($_GET['filter_guru']    ?? 0);
 
-// BUG-QA-01 FIX: Token untuk hapus penilaian tunggal (POST+CSRF)
-$csrf_delete_single = bin2hex(random_bytes(16));
-$_SESSION['csrf_tokens']['delete_single'] = $csrf_delete_single;
+// Daftar tahun ajaran yang tersedia (untuk dropdown filter)
+$listTA = $pdo->query("
+    SELECT DISTINCT ta_komponen FROM komponen ORDER BY ta_komponen DESC
+")->fetchAll(PDO::FETCH_COLUMN);
 
-$penilaianList = $pdo->query("
+// Bangun query dengan kondisi filter dinamis
+$where  = ['1=1'];
+$params = [];
+
+if ($filterTA !== '') {
+    $where[]  = 'p.periode = ?';
+    $params[] = $filterTA;
+}
+if ($filterTipe !== '') {
+    $where[]  = 'g.tipe = ?';
+    $params[] = $filterTipe;
+}
+if ($filterGuru > 0) {
+    $where[]  = 'p.id_guru = ?';
+    $params[] = $filterGuru;
+}
+
+$whereSQL = implode(' AND ', $where);
+
+$stmt = $pdo->prepare("
     SELECT p.*, g.nama, g.jabatan, g.tipe,
     (
-        SELECT ROUND(
-            (SELECT COALESCE(SUM(dp2.nilai),0) FROM detail_penilaian dp2 WHERE dp2.penilaian_id = p.id)
-            /
-            NULLIF(
-                (SELECT COALESCE(COUNT(dp3.id),0) FROM detail_penilaian dp3 WHERE dp3.penilaian_id = p.id) * 5
-            , 0)
-            * 100
-        , 1)
+        SELECT ROUND(AVG(ind_pct), 1)
+        FROM (
+            SELECT
+                SUM(dp2.nilai) / NULLIF(COUNT(dp2.id_hasil) * 5, 0) * 100 AS ind_pct
+            FROM hasil dp2
+            JOIN isi s ON dp2.id_item = s.id_item
+                      AND s.id_komponen = p.id_komponen
+            WHERE dp2.id_penilaian = p.id_penilaian
+            GROUP BY s.nama_indikator
+        ) ind_scores
     ) as rata_nilai
-    FROM penilaian p JOIN guru g ON p.guru_id = g.id
+    FROM penilaian p JOIN guru g ON p.id_guru = g.id_guru
+    WHERE $whereSQL
     ORDER BY p.created_at DESC
-")->fetchAll();
+");
+$stmt->execute($params);
+$penilaianList = $stmt->fetchAll();
 
-// JOIN tipe_guru untuk mendapat label tampil dan urutan yang benar
+// Semua guru (tidak digroup) untuk dropdown utama
 $guruAll = $pdo->query("
-    SELECT g.id, g.nama, g.jabatan, g.tipe, tg.label AS tipe_label
-    FROM guru g
-    LEFT JOIN tipe_guru tg ON g.tipe = tg.kode
+    SELECT g.id_guru, g.nama, g.jabatan, g.tipe, tg.label AS tipe_label
+    FROM guru g LEFT JOIN tipe_guru tg ON g.tipe = tg.kode
     ORDER BY tg.urutan, g.nama
 ")->fetchAll();
 
-$editPenilaian = null;
-$editDetail = [];
-$editCustom = [];
-if (($action === 'edit' || $action === 'view') && $id) {
-    $stmt = $pdo->prepare("SELECT p.*, g.tipe FROM penilaian p JOIN guru g ON p.guru_id=g.id WHERE p.id=?");
-    $stmt->execute([$id]);
-    $editPenilaian = $stmt->fetch();
-    $rows = $pdo->prepare("SELECT item_id, nilai FROM detail_penilaian WHERE penilaian_id=?");
-    $rows->execute([$id]);
-    foreach ($rows->fetchAll() as $r) $editDetail[$r['item_id']] = $r['nilai'];
-    $editCustom = [];
+$tipeLabels = getTipeGuru($pdo);
+
+// Ambil semua penilaian yang sudah ada (untuk cek duplikat guru+tahun ajaran)
+$existingPenilaian = $pdo->query("
+    SELECT p.id_guru, p.id_komponen, k.ta_komponen, g.nama as nama_guru
+    FROM penilaian p
+    JOIN komponen k ON p.id_komponen = k.id_komponen
+    JOIN guru g ON p.id_guru = g.id_guru
+")->fetchAll();
+$existingMap = [];
+foreach ($existingPenilaian as $ep) {
+    $existingMap[$ep['id_guru']][] = [
+        'id_komponen' => $ep['id_komponen'],
+        'ta_komponen' => $ep['ta_komponen'],
+    ];
 }
 
-function getKomponen($pdo, $tipe)
-{
-    $stmt = $pdo->prepare("
-        SELECT 
-            i.id,
-            i.komponen_id,
-            i.nomor_item,
-            i.nama_item,
-            i.urutan,
-            kp.nama_kategori AS kategori,
-            kp.urutan AS urutan_kategori
-        FROM item i
-        JOIN komponen_penilaian kp ON i.komponen_id = kp.id
-        WHERE kp.tipe_guru = ?
-        ORDER BY kp.urutan, i.urutan
-    ");
-    $stmt->execute([$tipe]);    
-    return $stmt->fetchAll();
+$editPenilaian = null;
+$editDetail    = [];
+
+if ($action === 'edit' && $id) {
+    $stmt = $pdo->prepare("SELECT p.*, g.tipe FROM penilaian p JOIN guru g ON p.id_guru=g.id_guru WHERE p.id_penilaian=?");
+    $stmt->execute([$id]);
+    $editPenilaian = $stmt->fetch();
+    // FIXED: baca id_item
+    $rows = $pdo->prepare("SELECT id_item, nilai FROM hasil WHERE id_penilaian=?");
+    $rows->execute([$id]);
+    foreach ($rows->fetchAll() as $r) $editDetail[$r['id_item']] = $r['nilai'];
+}
+
+function renderKomponenHtml(array $isiByInd, array $editDetail = []): string {
+    if (empty($isiByInd)) {
+        return '<div style="text-align:center;padding:30px;color:#9ca3af;border:2px dashed #e5e7eb;border-radius:12px;">
+            <p>Belum ada item pada custom penilaian ini.<br>
+            <a href="custom_penilaian.php" target="_blank" style="color:#1a4731;">Atur custom penilaian ↗</a></p></div>';
+    }
+    $katIcons = [
+        'Disiplin'                 => ['⏰','#1a4731','#e8f5ee'],
+        'Pelaksanaan Pembelajaran' => ['📚','#1e40af','#eff6ff'],
+        'Kerjasama'                => ['🤝','#7c3aed','#f5f3ff'],
+    ];
+    $html = '<div style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e8f5ee,#f0faf4);border-radius:12px;padding:14px 18px;border-left:4px solid var(--hijau);">
+            <span style="font-size:18px;">📋</span>
+            <div><strong style="font-size:14px;color:var(--hijau);display:block;">Komponen Penilaian</strong>
+            <span style="font-size:11.5px;color:#6b7280;">Skala: 1=Kurang | 2=Cukup | 3=Baik | 4=Sangat Baik | 5=Sangat Baik Sekali</span></div>
+        </div></div>';
+    $katNo = 1;
+    foreach ($isiByInd as $namaInd => $items) {
+        $ic = $katIcons[$namaInd] ?? ['📌','#374151','#f9fafb'];
+        $html .= '<div class="nilai-group" style="margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div class="nilai-kategori" style="background:'.$ic[2].';border-left:5px solid '.$ic[1].';padding:12px 18px;display:flex;align-items:center;gap:10px;margin:0;border-radius:0;">
+                <span style="font-size:20px;">'.$ic[0].'</span>
+                <div><span style="font-size:11px;color:'.$ic[1].';font-weight:600;text-transform:uppercase;opacity:0.7;">Indikator '.$katNo++.'</span>
+                <div style="font-size:14px;font-weight:700;color:'.$ic[1].';">'.htmlspecialchars($namaInd).'</div></div>
+            </div>';
+        foreach ($items as $item) {
+            $html .= '<div class="nilai-item" style="border-bottom:1px solid #f3f4f6;padding:10px 18px;overflow:hidden;align-items:flex-start;">
+                <div class="nilai-item-label" style="word-break:break-all;overflow-wrap:anywhere;white-space:normal;flex:1;min-width:0;"><span class="nilai-item-num">'.htmlspecialchars($item['nomor_item']).'.</span> '.htmlspecialchars($item['nama_item']).'</div>
+                <div class="nilai-radio-group">';
+            for ($v=1;$v<=5;$v++) {
+                $iid  = $item['id_item'];
+                $savedV = $editDetail[$iid] ?? null;
+                $chk  = $savedV !== null ? ($savedV == $v ? 'checked' : '') : ($v === 1 ? 'checked' : '');
+                $html .= '<input type="radio" name="nilai['.$iid.']" id="v'.$iid.'_'.$v.'" value="'.$v.'" '.$chk.'>';
+                $html .= '<label for="v'.$iid.'_'.$v.'">'.$v.'</label>';
+            }
+            $html .= '</div></div>';
+        }
+        $html .= '</div>';
+    }
+    return $html;
 }
 
 $pageTitle = 'Penilaian Kinerja Guru';
 require_once 'includes/header.php';
 ?>
 
-<?php if ($msg): ?>
-    <?php
-    // BUG-01 FIX: Bedakan tampilan alert error vs sukses
-    // Pesan error ditandai dengan prefix ⚠️ atau kata kunci gagal/tidak valid
-    $isError = str_starts_with($msg, '⚠️') || stripos($msg, 'Gagal') !== false || stripos($msg, 'tidak valid') !== false || stripos($msg, 'tidak lengkap') !== false || stripos($msg, 'tidak boleh') !== false;
-    ?>
-    <div class="alert-custom <?= $isError ? 'alert-error-custom' : 'alert-success-custom' ?> mb-4">
-        <?= $isError ? '' : '✓ ' ?><?= htmlspecialchars($msg) ?>
-    </div>
-<?php endif; ?>
+<!-- notifikasi ditangani oleh toast di footer -->
 
-<?php if ($action === 'add' || $action === 'edit'):
-    $tipeGuru = $editPenilaian['tipe'] ?? 'guru_kelas';
-    $komponen = getKomponen($pdo, $tipeGuru);
-    $kategoris = array_unique(array_column($komponen, 'kategori'));
-?>
-    <div class="data-table-card">
-        <div class="card-header-custom mb-4">
-            <div class="card-title-custom"><?= $action === 'edit' ? 'Edit' : 'Tambah' ?> Penilaian Kinerja Guru</div>
-            <a href="penilaian.php" class="btn-primary-custom" style="background:#6b7280;">← Kembali</a>
-        </div>
-        <form method="POST" autocomplete="off">
-            <input type="hidden" name="action" value="<?= htmlspecialchars($action) ?>">
-            <div class="row g-3 mb-4">
+<?php if ($action === 'add' || $action === 'edit'): ?>
+<div class="data-table-card">
+    <div class="card-header-custom mb-4">
+        <div class="card-title-custom"><?= $action==='edit'?'✏️ Edit':'➕ Tambah'?> Penilaian Kinerja Guru</div>
+        <a href="penilaian.php" class="btn-back">← Kembali</a>
+    </div>
+
+    <form method="POST" action="penilaian.php?action=<?= $action ?>&id=<?= $id ?>" autocomplete="off">
+        <input type="hidden" name="save_penilaian" value="1">
+        <input type="hidden" name="action" value="<?= $action ?>">
+        <?php if ($editPenilaian): ?>
+        <input type="hidden" name="id_guru" value="<?= (int)$editPenilaian['id_guru'] ?>">
+        <?php endif; ?>
+
+        <?php
+        $editTipeGuru      = $editPenilaian['tipe'] ?? '';
+        $editTipeGuruLabel = $tipeLabels[$editTipeGuru] ?? $editTipeGuru;
+        ?>
+
+        <!-- LANGKAH 1: Nama Guru (utama) → Tipe Guru (otomatis) → Tahun Ajaran -->
+        <div style="background:#f8fafc;border-radius:12px;padding:18px 20px;margin-bottom:22px;border-left:4px solid var(--hijau);">
+            <div style="font-size:12px;font-weight:700;color:var(--hijau);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;">
+                Langkah 1 — Pilih Guru Yang Dinilai
+            </div>
+            <div class="row g-3">
+
+                <!-- NAMA GURU — dropdown utama, semua guru tampil -->
                 <div class="col-md-6">
-                    <div class="form-label-custom">Guru Yang Dinilai</div>
-                    <select name="guru_id" id="sel_guru" class="form-control-custom" onchange="loadKomponen(this.value)" required>
-                        <option value="">-- Pilih Guru --</option>
+                    <div class="form-label-custom">Nama Guru <span style="color:#dc2626;">*</span></div>
+                    <select name="id_guru" id="sel_guru" class="form-control-custom" required
+                        onchange="onGuruChange(this.value)"
+                        <?= $editPenilaian ? 'disabled' : '' ?>>
+                        <option value="">-- Pilih Nama Guru --</option>
                         <?php foreach ($guruAll as $g): ?>
-                            <option value="<?= (int)$g['id'] ?>" data-tipe="<?= htmlspecialchars($g['tipe']) ?>"
-                                <?= ($editPenilaian && $editPenilaian['guru_id'] == $g['id']) ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($g['nama']) ?> (<?= htmlspecialchars($g['jabatan'] ?? '') ?>)
+                            <option value="<?= (int)$g['id_guru'] ?>"
+                                data-tipe="<?= htmlspecialchars($g['tipe']) ?>"
+                                data-tipe-label="<?= htmlspecialchars($g['tipe_label'] ?? $g['tipe']) ?>"
+                                <?= ($editPenilaian && $editPenilaian['id_guru'] == $g['id_guru']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($g['nama']) ?>
+                                <?= $g['jabatan'] ? ' (' . $g['jabatan'] . ')' : '' ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <?php if ($editPenilaian): ?>
+                        <small style="color:#9ca3af;font-size:11px;margin-top:3px;display:block;">(tidak bisa diubah saat edit)</small>
+                    <?php endif; ?>
                 </div>
-                <div class="col-md-6">
-                    <div class="form-label-custom">Periode Penilaian</div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <input type="date" name="periode_awal" class="form-control-custom"
-                            value="<?= htmlspecialchars($editPenilaian['periode_awal'] ?? '') ?>"
-                            required style="flex:1;" title="Tanggal mulai periode">
-                        <span style="color:#6b7280;font-size:13px;white-space:nowrap;">s.d</span>
-                        <input type="date" name="periode_akhir" class="form-control-custom"
-                            value="<?= htmlspecialchars($editPenilaian['periode_akhir'] ?? '') ?>"
-                            required style="flex:1;" title="Tanggal akhir periode">
-                    </div>
+
+                <!-- TIPE GURU — terisi otomatis dari pilihan guru -->
+                <div class="col-md-3">
+                    <div class="form-label-custom">Tipe Guru (otomatis)</div>
+                    <input type="text" id="disp_tipe_guru" class="form-control-custom" readonly
+                        style="background:#f3f4f6;color:#374151;font-weight:600;"
+                        value="<?= htmlspecialchars($editTipeGuruLabel) ?>"
+                        placeholder="Terisi otomatis">
                 </div>
+
+                <!-- TAHUN AJARAN — muncul setelah guru dipilih via AJAX -->
+                <div class="col-md-3">
+                    <div class="form-label-custom">Tahun Ajaran <span style="color:#dc2626;">*</span></div>
+                    <select name="id_komponen" id="sel_komponen" class="form-control-custom" required
+                        onchange="onKomponenChange(this.value)"
+                        <?= $editPenilaian ? '' : 'disabled' ?>>
+                        <?php if ($editPenilaian && $editPenilaian['id_komponen']): ?>
+                            <?php
+                            $ks = $pdo->prepare("SELECT id_komponen, ta_komponen FROM komponen WHERE type_guru = ? ORDER BY id_komponen DESC");
+                            $ks->execute([$editTipeGuru]);
+                            echo '<option value="">-- Pilih Tahun Ajaran --</option>';
+                            foreach ($ks->fetchAll() as $k):
+                            ?>
+                            <option value="<?= $k['id_komponen'] ?>"
+                                <?= $k['id_komponen'] == $editPenilaian['id_komponen'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($k['ta_komponen']) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <option value="">-- Pilih guru dulu --</option>
+                        <?php endif; ?>
+                    </select>
+                    <small style="color:#9ca3af;font-size:11px;margin-top:4px;display:block;">
+                        <a href="custom_penilaian.php" target="_blank" style="color:var(--hijau);">Kelola Custom Penilaian ↗</a>
+                    </small>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- LANGKAH 2: Info Penilaian -->
+        <div style="background:#f8fafc;border-radius:12px;padding:18px 20px;margin-bottom:22px;border-left:4px solid #6366f1;">
+            <div style="font-size:12px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;">
+                Langkah 2 — Informasi Penilaian
+            </div>
+            <div class="row g-3">
                 <div class="col-md-3">
                     <div class="form-label-custom">Tanggal Penilaian</div>
-                    <input type="date" name="tanggal_penilaian" class="form-control-custom" value="<?= $editPenilaian['tanggal_penilaian'] ?? date('Y-m-d') ?>" required>
+                    <input type="date" name="tanggal_penilaian" class="form-control-custom"
+                        value="<?= $editPenilaian['tanggal_penilaian'] ?? date('Y-m-d') ?>" required>
                 </div>
                 <div class="col-md-5">
                     <div class="form-label-custom">Nama Penilai</div>
                     <input type="text" name="penilai" class="form-control-custom" readonly
-                        style="background:#f3f4f6;color:#555;cursor:not-allowed;"
-                        value="<?= htmlspecialchars($editPenilaian['penilai'] ?? $defaultPenilai) ?>">
+                        style="background:#f3f4f6;color:#555;"
+                        value="<?= htmlspecialchars($editPenilaian['penilai'] ?? 'Hasyim Ashari, S.T') ?>">
                 </div>
                 <div class="col-md-4">
                     <div class="form-label-custom">Jabatan Penilai</div>
                     <input type="text" name="jabatan_penilai" class="form-control-custom" readonly
-                        style="background:#f3f4f6;color:#555;cursor:not-allowed;"
-                        value="<?= htmlspecialchars($editPenilaian['jabatan_penilai'] ?? $defaultJabPenilai) ?>">
+                        style="background:#f3f4f6;color:#555;"
+                        value="<?= htmlspecialchars($editPenilaian['jabatan_penilai'] ?? 'Kepala Sekolah') ?>">
                 </div>
-
-            </div>
-
-            <div id="komponen-area">
-                <?php if ($komponen): ?>
-                    <div style="margin-bottom:20px;">
-                        <div style="display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e8f5ee,#f0faf4);border-radius:12px;padding:14px 18px;border-left:4px solid var(--hijau);">
-                            <span style="font-size:18px;">📋</span>
-                            <div>
-                                <strong style="font-size:14px;color:var(--hijau);display:block;">Komponen Penilaian</strong>
-                                <span style="font-size:11.5px;color:#6b7280;">Skala: 1 = Kurang &nbsp;|&nbsp; 2 = Cukup &nbsp;|&nbsp; 3 = Baik &nbsp;|&nbsp; 4 = Sangat Baik &nbsp;|&nbsp; 5 = Sangat Baik Sekali</span>
-                            </div>
-                        </div>
-                    </div>
-                    <?php
-                    $katIcons = ['Disiplin' => ['⏰', '#1a4731', '#e8f5ee'], 'Pelaksanaan Pembelajaran' => ['📚', '#1e40af', '#eff6ff'], 'Kerjasama' => ['🤝', '#7c3aed', '#f5f3ff'], 'Kinerja' => ['📊', '#0f766e', '#f0fdfa'], 'Administrasi' => ['🗂️', '#b45309', '#fef3c7'], 'Pelayanan' => ['🌟', '#be185d', '#fdf2f8']];
-                    $katNo = 1;
-                    foreach ($kategoris as $kat):
-                        $items = array_filter($komponen, fn($k) => $k['kategori'] === $kat);
-                        $ic = $katIcons[$kat] ?? ['📌', '#374151', '#f9fafb'];
-                    ?>
-                        <div class="nilai-group" style="margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-                            <div class="nilai-kategori" style="background:<?= $ic[2] ?>;border-left:5px solid <?= $ic[1] ?>;padding:12px 18px;display:flex;align-items:center;gap:10px;margin:0;border-radius:0;">
-                                <span style="font-size:20px;"><?= $ic[0] ?></span>
-                                <div>
-                                    <span style="font-size:11px;color:<?= $ic[1] ?>;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7;">Kategori <?= $katNo++ ?></span>
-                                    <div style="font-size:14px;font-weight:700;color:<?= $ic[1] ?>;"><?= htmlspecialchars($kat) ?></div>
-                                </div>
-                            </div>
-                            <?php foreach ($items as $item): ?>
-                                <div class="nilai-item" style="border-bottom:1px solid #f3f4f6;padding:10px 18px;">
-                                    <div class="nilai-item-label">
-                                        <span class="nilai-item-num"><?= $item['nomor_item'] ?>.</span>
-                                        <?= htmlspecialchars($item['nama_item']) ?>
-                                    </div>
-                                    <div class="nilai-radio-group">
-                                        <?php for ($v = 1; $v <= 5; $v++):
-                                            $checked = isset($editDetail[$item['id']]) && $editDetail[$item['id']] == $v ? 'checked' : '';
-                                            if (!$checked && !$editPenilaian && $v === 1) $checked = 'checked';
-                                        ?>
-                                            <input type="radio" name="nilai[<?= $item['id'] ?>]" id="v<?= $item['id'] . '_' . $v ?>" value="<?= $v ?>" <?= $checked ?>>
-                                            <label for="v<?= $item['id'] . '_' . $v ?>"><?= $v ?></label>
-                                        <?php endfor; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-
-            <!-- ===== KOMPONEN PENILAIAN CUSTOM ===== -->
-            <div style="margin-top:28px;">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                    <div style="display:flex;align-items:center;gap:10px;">
-                        <span style="font-size:14px;">➕</span>
-                        <strong style="font-size:13.5px;color:var(--hijau);">Komponen Penilaian Tambahan (Opsional)</strong>
-                    </div>
-                    <button type="button" onclick="tambahKategoriCustom()" class="btn-primary-custom" style="font-size:12px;padding:7px 14px;background:#0f766e;">
-                        + Tambah Kategori Baru
-                    </button>
-                </div>
-                <div id="custom-area">
-                    <?php foreach ($editCustom as $cIdx => $ci): ?>
-                        <div class="custom-kategori-block" style="border:1.5px dashed #c9a84c;border-radius:10px;overflow:hidden;margin-bottom:14px;background:#fffdf5;">
-                            <div style="background:#fef9ec;border-left:4px solid #c9a84c;padding:12px 16px;display:flex;align-items:center;gap:10px;">
-                                <span style="font-size:16px;">✳️</span>
-                                <div style="flex:1;">
-                                    <span style="font-size:10px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;">Kategori Tambahan</span>
-                                    <input type="text" class="form-control-custom" style="font-weight:700;font-size:13.5px;color:#78350f;border:none;background:transparent;padding:2px 0;margin:0;height:auto;"
-                                        placeholder="cth: Prestasi, Program Khusus, dll"
-                                        name="custom_kategori[<?= $cIdx ?>]"
-                                        value="<?= htmlspecialchars($ci['kategori']) ?>">
-                                </div>
-                                <button type="button" onclick="hapusKategori(this)" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:20px;line-height:1;padding:0 4px;" title="Hapus kategori ini">×</button>
-                            </div>
-                            <div class="custom-items" style="padding:12px 16px 4px;">
-                                <div class="custom-item-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                                    <input type="text" class="form-control-custom" style="flex:1;"
-                                        placeholder="Nama penilaian..."
-                                        name="custom_item[<?= $cIdx ?>]"
-                                        value="<?= htmlspecialchars($ci['nama_item']) ?>">
-                                    <div class="nilai-radio-group" style="flex-shrink:0;">
-                                        <?php for ($v = 1; $v <= 5; $v++): $checked = $ci['nilai'] == $v ? 'checked' : ''; ?>
-                                            <input type="radio" name="custom_nilai[<?= $cIdx ?>]" id="cv<?= $cIdx . '_' . $v ?>" value="<?= $v ?>" <?= $checked ?>>
-                                            <label for="cv<?= $cIdx . '_' . $v ?>"><?= $v ?></label>
-                                        <?php endfor; ?>
-                                    </div>
-                                    <button type="button" onclick="hapusItem(this)" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1;" title="Hapus item">×</button>
-                                </div>
-                            </div>
-                            <div style="padding:4px 16px 12px;">
-                                <button type="button" onclick="tambahItemCustom(this)" style="background:none;border:none;cursor:pointer;color:var(--hijau);font-size:12px;font-weight:600;padding:4px 0;">
-                                    + Tambah Penilaian
-                                </button>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-                <p style="font-size:12px;color:#888;margin-top:8px;">💡 Gunakan fitur ini untuk menambah kategori penilaian di luar komponen standar, misalnya: Prestasi Khusus, Program Ramadhan, dll.</p>
-            </div>
-            <!-- ===== END CUSTOM ===== -->
-
-            <div class="row g-3 mt-2">
-                <div class="col-12">
-                    <div class="form-label-custom">Catatan / Rekomendasi</div>
-                    <textarea name="catatan" class="form-control-custom" rows="4" placeholder="Tuliskan catatan evaluasi..."><?= htmlspecialchars($editPenilaian['catatan'] ?? '') ?></textarea>
-                </div>
-            </div>
-            <div class="d-flex gap-3 mt-4">
-                <button type="submit" class="btn-primary-custom">💾 Simpan Penilaian</button>
-                <a href="penilaian.php" class="btn btn-light">Batal</a>
-            </div>
-        </form>
-    </div>
-
-    <script>
-        // Data nilai tersimpan (untuk mode edit) — diinjek dari PHP
-        const savedNilai = <?= json_encode($editDetail ?: new stdClass(), JSON_HEX_TAG | JSON_HEX_APOS) ?>;
-
-        // escHtml — escape HTML chars sebelum insert ke innerHTML
-        // Wajib dipakai untuk semua data dari DB / API agar aman dari DOM XSS
-        function escHtml(str) {
-            const d = document.createElement('div');
-            d.appendChild(document.createTextNode(String(str ?? '')));
-            return d.innerHTML;
-        }
-
-        function loadKomponen(guru_id) {
-            if (!guru_id) return;
-            const sel = document.getElementById('sel_guru');
-            const tipe = sel.options[sel.selectedIndex].getAttribute('data-tipe');
-            if (!tipe) return;
-            fetch('api_komponen.php?tipe=' + tipe, {
-                // Header X-Requested-With diperlukan oleh api_komponen.php
-                // untuk memastikan request berasal dari AJAX, bukan akses langsung
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
-                .then(r => r.json())
-                .then(data => {
-                    const area = document.getElementById('komponen-area');
-                    if (!data.length) {
-                        area.innerHTML = '<p class="text-muted">Tidak ada komponen penilaian untuk tipe ini. Silakan tambahkan di menu <a href="komponen.php?tab=' + tipe + '">Komponen Penilaian</a> terlebih dahulu.</p>';
-                        return;
-                    }
-                    const kategoris = [...new Set(data.map(k => k.kategori))];
-                    const katStyles = {
-                        'Disiplin':                  { icon: '⏰', color: '#1a4731', bg: '#e8f5ee' },
-                        'Pelaksanaan Pembelajaran':   { icon: '📚', color: '#1e40af', bg: '#eff6ff' },
-                        'Kerjasama':                 { icon: '🤝', color: '#7c3aed', bg: '#f5f3ff' },
-                        'Kinerja':                   { icon: '📊', color: '#0f766e', bg: '#f0fdfa' },
-                        'Administrasi':              { icon: '🗂️', color: '#b45309', bg: '#fef3c7' },
-                        'Pelayanan':                 { icon: '🌟', color: '#be185d', bg: '#fdf2f8' },
-                    };
-                    let html = `<div style="margin-bottom:20px;">
-                <div style="display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e8f5ee,#f0faf4);border-radius:12px;padding:14px 18px;border-left:4px solid var(--hijau);">
-                    <span style="font-size:18px;">📋</span>
-                    <div>
-                        <strong style="font-size:14px;color:var(--hijau);display:block;">Komponen Penilaian</strong>
-                        <span style="font-size:11.5px;color:#6b7280;">Skala: 1 = Kurang &nbsp;|&nbsp; 2 = Cukup &nbsp;|&nbsp; 3 = Baik &nbsp;|&nbsp; 4 = Sangat Baik &nbsp;|&nbsp; 5 = Sangat Baik Sekali</span>
-                    </div>
-                </div></div>`;
-                    let katNo = 1;
-                    kategoris.forEach(kat => {
-                        const items = data.filter(k => k.kategori === kat);
-                        const s = katStyles[kat] || {
-                            icon: '📌',
-                            color: '#374151',
-                            bg: '#f9fafb'
-                        };
-                        html += `<div class="nilai-group" style="margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-                    <div class="nilai-kategori" style="background:${s.bg};border-left:5px solid ${s.color};padding:12px 18px;display:flex;align-items:center;gap:10px;margin:0;border-radius:0;">
-                        <span style="font-size:20px;">${s.icon}</span>
-                        <div>
-                            <span style="font-size:11px;color:${s.color};font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7;">Kategori ${katNo++}</span>
-                            <div style="font-size:14px;font-weight:700;color:${s.color};">${escHtml(kat)}</div>
-                        </div>
-                    </div>`;
-                        items.forEach(item => {
-                            html += `<div class="nilai-item" style="border-bottom:1px solid #f3f4f6;padding:10px 18px;"><div class="nilai-item-label"><span class="nilai-item-num">${escHtml(item.nomor_item)}.</span> ${escHtml(item.nama_item)}</div><div class="nilai-radio-group">`;
-                            for (let v = 1; v <= 5; v++) {
-                                // Gunakan nilai tersimpan jika ada (mode edit), default ke 1
-                                const checked = (savedNilai[item.id] == v) ? 'checked' : ((!savedNilai[item.id] && v===1) ? 'checked' : '');
-                                html += `<input type="radio" name="nilai[${item.id}]" id="v${item.id}_${v}" value="${v}" ${checked}><label for="v${item.id}_${v}">${v}</label>`;
-                            }
-                            html += `</div></div>`;
-                        });
-                        html += `</div>`;
-                    });
-                    area.innerHTML = html;
-                });
-        }
-
-        let customIdx = 90000;
-
-        function tambahKategoriCustom() {
-            const area = document.getElementById('custom-area');
-            const block = document.createElement('div');
-            block.className = 'custom-kategori-block';
-            block.style.cssText = 'border:1.5px dashed #c9a84c;border-radius:10px;overflow:hidden;margin-bottom:14px;background:#fffdf5;';
-            block.innerHTML = `
-        <div style="background:#fef9ec;border-left:4px solid #c9a84c;padding:12px 16px;display:flex;align-items:center;gap:10px;">
-            <span style="font-size:16px;">✳️</span>
-            <div style="flex:1;">
-                <span style="font-size:10px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;">Kategori Tambahan</span>
-                <input type="text" class="form-control-custom" style="font-weight:700;font-size:13.5px;color:#78350f;border:none;background:transparent;padding:2px 0;margin:0;height:auto;"
-                    placeholder="cth: Prestasi, Program Khusus, dll"
-                    data-kat-name="1">
-            </div>
-            <button type="button" onclick="hapusKategori(this)" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:20px;line-height:1;padding:0 4px;" title="Hapus kategori ini">×</button>
-        </div>
-        <div class="custom-items" style="padding:12px 16px 4px;"></div>
-        <div style="padding:4px 16px 12px;">
-            <button type="button" onclick="tambahItemCustom(this)" style="background:none;border:none;cursor:pointer;color:var(--hijau);font-size:12px;font-weight:600;padding:4px 0;">
-                + Tambah Penilaian
-            </button>
-        </div>`;
-            area.appendChild(block);
-            const katInput = block.querySelector('[data-kat-name]');
-            tambahItemCustom(block.querySelector('button[onclick^="tambahItem"]'));
-            katInput.focus();
-        }
-
-        function tambahItemCustom(btn) {
-            const block = btn.closest('.custom-kategori-block');
-            const itemsDiv = block.querySelector('.custom-items');
-            const uid = customIdx++;
-            // Sync kategori name from block header input to hidden fields
-            const katInput = block.querySelector('[data-kat-name]');
-            const row = document.createElement('div');
-            row.className = 'custom-item-row';
-            row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;';
-            let radios = '';
-            for (let v = 1; v <= 5; v++) {
-                radios += `<input type="radio" name="custom_nilai[${uid}]" id="r${uid}_${v}" value="${v}" ${v===1?'checked':''}><label for="r${uid}_${v}">${v}</label>`;
-            }
-            row.innerHTML = `
-        <input type="hidden" class="kat-ref" name="custom_kategori[${uid}]" value="${katInput ? katInput.value : ''}">
-        <input type="text" class="form-control-custom" style="flex:1;"
-            placeholder="Nama penilaian..."
-            name="custom_item[${uid}]">
-        <div class="nilai-radio-group" style="flex-shrink:0;">${radios}</div>
-        <button type="button" onclick="hapusItem(this)" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1;" title="Hapus item">×</button>`;
-            itemsDiv.appendChild(row);
-            // Update kat hidden inputs on kat name change
-            if (katInput) {
-                katInput.addEventListener('input', function() {
-                    block.querySelectorAll('.kat-ref').forEach(h => h.value = this.value);
-                });
-            }
-            row.querySelector(`input[name="custom_item[${uid}]"]`).focus();
-        }
-
-        function hapusItem(btn) {
-            const row = btn.closest('.custom-item-row');
-            const block = row.closest('.custom-kategori-block');
-            row.remove();
-            if (!block.querySelector('.custom-item-row')) hapusKategori(block.querySelector('[onclick="hapusKategori(this)"]'));
-        }
-
-        function hapusKategori(btn) {
-            btn.closest('.custom-kategori-block').remove();
-        }
-
-        // Auto-load komponen saat halaman pertama kali dibuka (mode add & edit)
-        document.addEventListener('DOMContentLoaded', function () {
-            const sel = document.getElementById('sel_guru');
-            if (sel && sel.value) {
-                loadKomponen(sel.value);
-            }
-            // Pastikan radio value terpilih saat loadKomponen selesai (mode edit)
-            sel && sel.addEventListener('change', function() {
-                // Reset custom area jika ganti guru
-                document.getElementById('custom-area').innerHTML = '';
-            });
-        });
-    </script>
-
-<?php else: ?>
-
-    <div class="data-table-card">
-        <div class="card-header-custom">
-            <div class="card-title-custom">Daftar Penilaian Kinerja</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                <button id="btnHapusTerpilih" onclick="hapusTerpilih()"
-                    class="btn-primary-custom" style="background:#dc2626;display:none;">
-                    🗑 Hapus Terpilih (<span id="jumlahTerpilih">0</span>)
-                </button>
-                <button onclick="hapusSemua()"
-                    class="btn-primary-custom" style="background:#7f1d1d;">
-                    🗑 Hapus Semua
-                </button>
-                <a href="penilaian.php?action=add" class="btn-primary-custom">+ Tambah Penilaian</a>
             </div>
         </div>
 
-        <!-- Form hapus terpilih: autocomplete="off" agar browser tidak menyimpan isian checkbox -->
-        <form id="formHapusTerpilih" method="POST" action="penilaian.php?action=delete_selected" autocomplete="off">
-        <table class="table table-hover datatable" style="font-size:13px;">
-            <thead style="background:#f8fafc;">
-                <tr>
-                    <th style="width:36px;"><input type="checkbox" id="checkAll" title="Pilih semua" onchange="toggleAll(this)"></th>
-                    <th>No</th>
-                    <th>Nama Guru</th>
-                    <th>Jabatan</th>
-                    <th>Periode</th>
-                    <th>Tgl Penilaian</th>
-                    <th>Nilai Rata²</th>
-                    <th>Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($penilaianList as $i => $p): ?>
-                    <tr>
-                        <td><input type="checkbox" name="selected_ids[]" value="<?= $p['id'] ?>" class="row-check" onchange="updateTerpilih()"></td>
-                        <td><?= $i + 1 ?></td>
-                        <td><strong><?= htmlspecialchars($p['nama']) ?></strong></td>
-                        <td><small><?= htmlspecialchars($p['jabatan'] ?? '') ?></small></td>
-                        <td><small><?= htmlspecialchars($p['periode']) ?></small></td>
-                        <td><?= date('d/m/Y', strtotime($p['tanggal_penilaian'])) ?></td>
-                        <td>
-                            <?php if ($p['rata_nilai']): ?>
-                                <span style="font-weight:600;color:<?= ($p['rata_nilai'] ?? 0) >= 75 ? '#16a34a' : (($p['rata_nilai'] ?? 0) >= 50 ? '#d97706' : '#dc2626') ?>">
-                                    <?= $p['rata_nilai'] ?>%
-                                </span>
-                            <?php else: ?><span class="text-muted">-</span><?php endif; ?>
-                        </td>
-                        <td>
-                            <div style="display:flex;gap:5px;flex-wrap:wrap;">
-                                <a href="penilaian.php?action=edit&id=<?= $p['id'] ?>" class="btn-primary-custom btn-sm-custom btn-edit">Edit</a>
-                                <a href="cetak.php?id=<?= $p['id'] ?>" class="btn-primary-custom btn-sm-custom btn-view" target="_blank">Cetak</a>
-                                <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDeleteSingle(<?= $p['id'] ?>)">Hapus</button>
-                            </div>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-        </form>
-    </div>
+        <!-- LANGKAH 3: Form Penilaian (auto-load setelah pilih tahun ajaran) -->
+        <div id="komponen-area">
+            <?php
+            if ($editPenilaian && $editPenilaian['id_komponen']) {
+                $isiStmt = $pdo->prepare("
+                    SELECT s.*, m.nama_item
+                    FROM isi s JOIN item m ON s.id_item = m.id_item
+                    WHERE s.id_komponen = ? ORDER BY s.urutan_isi, s.nomor_item
+                ");
+                $isiStmt->execute([$editPenilaian['id_komponen']]);
+                $isiByInd = [];
+                foreach ($isiStmt->fetchAll() as $row) $isiByInd[$row['nama_indikator']][] = $row;
+                echo renderKomponenHtml($isiByInd, $editDetail);
+            } else {
+                echo '<div id="placeholder-komponen" style="text-align:center;padding:40px;color:#9ca3af;border:2px dashed #e5e7eb;border-radius:12px;">
+                    <div style="font-size:36px;margin-bottom:12px;">📋</div>
+                    <p>Pilih nama guru dan tahun ajaran untuk menampilkan form penilaian.</p></div>';
+            }
+            ?>
+        </div>
 
-    <script>
-    function toggleAll(master) {
-        document.querySelectorAll('.row-check').forEach(cb => cb.checked = master.checked);
-        updateTerpilih();
-    }
-    function updateTerpilih() {
-        const checked = document.querySelectorAll('.row-check:checked');
-        const btn     = document.getElementById('btnHapusTerpilih');
-        const count   = document.getElementById('jumlahTerpilih');
-        const master  = document.getElementById('checkAll');
-        const all     = document.querySelectorAll('.row-check');
-        count.textContent = checked.length;
-        btn.style.display = checked.length > 0 ? '' : 'none';
-        if (master) master.checked = all.length > 0 && checked.length === all.length;
-    }
-    function hapusTerpilih() {
-        const n = document.querySelectorAll('.row-check:checked').length;
-        if (!n) return;
-        // WARN-04 FIX: Gunakan modal Bootstrap, bukan confirm() native yang tidak konsisten di mobile
-        document.getElementById('confirmMsg').textContent =
-            'Hapus ' + n + ' penilaian yang dipilih? Tindakan ini tidak bisa dibatalkan.';
-        document.getElementById('confirmBtn').onclick = function() {
-            document.getElementById('formHapusTerpilih').submit();
-        };
-        new bootstrap.Modal(document.getElementById('confirmModal')).show();
-    }
-    function hapusSemua() {
-        // WARN-04 FIX: Gunakan modal Bootstrap, bukan confirm() native
-        document.getElementById('confirmMsg').textContent =
-            'Hapus SEMUA penilaian? Seluruh data nilai akan hilang permanen dan tidak bisa dikembalikan!';
-        document.getElementById('confirmBtn').onclick = function() {
-            // Kirim via POST form dengan CSRF token (bukan GET) untuk mencegah aksi tidak disengaja
-            document.getElementById('formHapusSemua').submit();
-        };
-        new bootstrap.Modal(document.getElementById('confirmModal')).show();
-    }
-    // BUG-QA-01 FIX: Hapus penilaian tunggal via POST+CSRF (bukan GET)
-    function confirmDeleteSingle(id) {
-        document.getElementById('confirmMsg').textContent =
-            'Hapus penilaian ini? Data nilai tidak bisa dikembalikan.';
-        document.getElementById('confirmBtn').onclick = function() {
-            document.getElementById('hapusSingleId').value = id;
-            document.getElementById('formHapusSingle').submit();
-        };
-        new bootstrap.Modal(document.getElementById('confirmModal')).show();
-    }
-    </script>
-
-<?php endif; ?>
-
-<!-- Modal Konfirmasi Hapus (konsisten dengan guru.php) -->
-<div class="modal fade" id="confirmModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
-        <div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
-            <div class="modal-body" style="padding:32px 28px 20px;text-align:center;">
-                <div style="font-size:44px;margin-bottom:14px;">⚠️</div>
-                <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:8px;">Konfirmasi Hapus</div>
-                <div id="confirmMsg" style="font-size:13px;color:#6b7280;line-height:1.6;"></div>
-            </div>
-            <div class="modal-footer" style="border:none;padding:0 28px 24px;gap:8px;justify-content:center;">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
-                    style="border-radius:8px;padding:8px 20px;font-size:13px;">Batal</button>
-                <button type="button" id="confirmBtn"
-                    style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;">
-                    Ya, Hapus
-                </button>
+        <div class="row g-3 mt-2">
+            <div class="col-12">
+                <div class="form-label-custom">Catatan / Rekomendasi</div>
+                <textarea name="catatan" class="form-control-custom" rows="4"
+                    placeholder="Tuliskan catatan evaluasi..."><?= htmlspecialchars($editPenilaian['catatan']??'') ?></textarea>
             </div>
         </div>
-    </div>
+        <div class="d-flex gap-3 mt-4">
+            <button type="submit" class="btn-primary-custom">💾 Simpan Penilaian</button>
+            <a href="penilaian.php" class="btn-cancel">Batal</a>
+        </div>
+    </form>
 </div>
 
-<!-- Form tersembunyi untuk Hapus Semua — POST + CSRF token -->
-<form id="formHapusSemua" method="POST" action="penilaian.php?action=delete_all" style="display:none;" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_all ?? '') ?>">
-</form>
+<script>
+const savedNilai = <?= json_encode($editDetail ?: new stdClass()) ?>;
+const isEditMode = <?= $action==='edit' ? 'true' : 'false' ?>;
+const tipeLabels = <?= json_encode($tipeLabels) ?>;
+const existingPenilaian = <?= json_encode($existingMap) ?>;
 
-<!-- BUG-QA-01 FIX: Form tersembunyi hapus satu penilaian — POST + CSRF token -->
-<!-- Sebelumnya: GET ?action=delete&id=N rentan CSRF. Sekarang: POST + token one-time. -->
-<form id="formHapusSingle" method="POST" action="penilaian.php?action=delete" style="display:none;" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_delete_single ?? '') ?>">
-    <input type="hidden" name="del_id" id="hapusSingleId" value="">
-</form>
+// ── Pilih Guru → auto-fill Tipe Guru + load Tahun Ajaran via AJAX ──────────
+function onGuruChange(id_guru) {
+    const selGuru  = document.getElementById('sel_guru');
+    const selK     = document.getElementById('sel_komponen');
+    const dispTipe = document.getElementById('disp_tipe_guru');
 
+    const opt   = selGuru.options[selGuru.selectedIndex];
+    const tipe  = opt ? (opt.dataset.tipe || '') : '';
+    const label = opt ? (opt.dataset.tipeLabel || '') : '';
+
+    dispTipe.value = label || (tipeLabels[tipe] || tipe);
+
+    resetKomponenArea();
+    hideDuplicateWarning();
+    selK.innerHTML = '<option value="">Memuat...</option>';
+    selK.disabled  = true;
+
+    if (!tipe || !id_guru) {
+        selK.innerHTML = '<option value="">-- Pilih guru dulu --</option>';
+        return;
+    }
+
+    fetch('api_custom_komponen.php?tipe=' + encodeURIComponent(tipe))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.length) {
+                selK.innerHTML = '<option value="">Belum ada tahun ajaran untuk tipe ini. Buat di Buat Pertanyaan Penilaian.</option>';
+                return;
+            }
+            selK.innerHTML = '<option value="">-- Pilih Tahun Ajaran --</option>';
+            data.forEach(k => {
+                const o       = document.createElement('option');
+                o.value       = k.id_komponen;
+                o.textContent = k.ta_komponen;
+                selK.appendChild(o);
+            });
+            selK.disabled = false;
+        })
+        .catch(() => {
+            selK.innerHTML = '<option value="">Gagal memuat data.</option>';
+        });
+}
+
+function showDuplicateWarning(ta) {
+    let el = document.getElementById('dupWarning');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'dupWarning';
+        const selKWrap = document.getElementById('sel_komponen').closest('.col-md-3');
+        selKWrap.appendChild(el);
+    }
+    el.innerHTML = `<div style="margin-top:8px;display:flex;align-items:flex-start;gap:10px;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:10px 14px;">
+        <span style="font-size:18px;flex-shrink:0;">⚠️</span>
+        <div>
+            <div style="font-size:12px;font-weight:700;color:#92400e;">Guru sudah pernah dinilai di tahun ajaran <strong>${ta}</strong>.</div>
+            <div style="font-size:11px;color:#78350f;margin-top:2px;">Penilaian baru tetap bisa dibuat. Klik tombol di bawah untuk melanjutkan.</div>
+            <button type="button" onclick="dismissAndLoad()" style="margin-top:6px;padding:4px 12px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">▶ Tetap Lanjutkan</button>
+        </div>
+    </div>`;
+    el.style.display = '';
+}
+
+function hideDuplicateWarning() {
+    const el = document.getElementById('dupWarning');
+    if (el) el.style.display = 'none';
+}
+
+function dismissAndLoad() {
+    hideDuplicateWarning();
+    const id_komponen = document.getElementById('sel_komponen').value;
+    if (id_komponen) loadFormPenilaian(id_komponen);
+}
+
+// ── Pilih Tahun Ajaran → cek duplikat lalu tampilkan form penilaian ──────────
+function onKomponenChange(id_komponen) {
+    hideDuplicateWarning();
+    if (!id_komponen) { resetKomponenArea(); return; }
+
+    // Cek duplikat: guru + tahun ajaran sudah pernah dinilai?
+    const selGuru = document.getElementById('sel_guru');
+    const id_guru = selGuru ? selGuru.value : '';
+    if (!isEditMode && id_guru && existingPenilaian[id_guru]) {
+        const found = existingPenilaian[id_guru].find(p => String(p.id_komponen) === String(id_komponen));
+        if (found) {
+            showDuplicateWarning(found.ta_komponen);
+            resetKomponenArea();
+            return;
+        }
+    }
+    loadFormPenilaian(id_komponen);
+}
+
+function loadFormPenilaian(id_komponen) {
+    const area = document.getElementById('komponen-area');
+    area.innerHTML = '<div style="text-align:center;padding:30px;color:#6b7280;"><span style="font-size:24px;">⏳</span><p>Memuat form penilaian...</p></div>';
+
+    fetch('api_custom_komponen.php?id_komponen=' + encodeURIComponent(id_komponen))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.length) {
+                area.innerHTML = '<div style="text-align:center;padding:30px;color:#9ca3af;border:2px dashed #e5e7eb;border-radius:12px;"><p>⚠️ Belum ada item. <a href="custom_penilaian.php" target="_blank" style="color:#1a4731;">Atur Buat Pertanyaan Penilaian ↗</a></p></div>';
+                return;
+            }
+            const grouped = {};
+            data.forEach(r => {
+                if (!grouped[r.nama_indikator]) grouped[r.nama_indikator] = [];
+                grouped[r.nama_indikator].push(r);
+            });
+            const katStyles = {
+                'Disiplin':                 {icon:'⏰', color:'#1a4731', bg:'#e8f5ee'},
+                'Pelaksanaan Pembelajaran': {icon:'📚', color:'#1e40af', bg:'#eff6ff'},
+                'Kerjasama':               {icon:'🤝', color:'#7c3aed', bg:'#f5f3ff'},
+            };
+            let html = `<div style="margin-bottom:20px;">
+                <div style="display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e8f5ee,#f0faf4);border-radius:12px;padding:14px 18px;border-left:4px solid var(--hijau);">
+                    <span style="font-size:18px;">📋</span>
+                    <div><strong style="font-size:14px;color:var(--hijau);display:block;">Komponen Penilaian</strong>
+                    <span style="font-size:11.5px;color:#6b7280;">Skala: 1=Kurang | 2=Cukup | 3=Baik | 4=Sangat Baik | 5=Sangat Baik Sekali</span></div>
+                </div></div>`;
+            let katNo = 1;
+            Object.entries(grouped).forEach(([namaInd, items]) => {
+                const s = katStyles[namaInd] || {icon:'📌', color:'#374151', bg:'#f9fafb'};
+                html += `<div class="nilai-group" style="margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+                    <div class="nilai-kategori" style="background:${s.bg};border-left:5px solid ${s.color};padding:12px 18px;display:flex;align-items:center;gap:10px;margin:0;border-radius:0;">
+                        <span style="font-size:20px;">${s.icon}</span>
+                        <div><span style="font-size:11px;color:${s.color};font-weight:600;text-transform:uppercase;opacity:0.7;">Indikator ${katNo++}</span>
+                        <div style="font-size:14px;font-weight:700;color:${s.color};">${namaInd}</div></div>
+                    </div>`;
+                items.forEach(item => {
+                    html += `<div class="nilai-item" style="border-bottom:1px solid #f3f4f6;padding:10px 18px;overflow:hidden;align-items:flex-start;">
+                        <div class="nilai-item-label" style="word-break:break-all;overflow-wrap:anywhere;white-space:normal;flex:1;min-width:0;">${item.nama_item}</div>
+                        <div class="nilai-radio-group">`;
+                    for (let v = 1; v <= 5; v++) {
+                        const sv  = savedNilai[item.id_item];
+                        const chk = isEditMode ? (sv == v ? 'checked' : '') : (v === 1 ? 'checked' : '');
+                        html += `<input type="radio" name="nilai[${item.id_item}]" id="v${item.id_item}_${v}" value="${v}" ${chk}>
+                                 <label for="v${item.id_item}_${v}">${v}</label>`;
+                    }
+                    html += `</div></div>`;
+                });
+                html += `</div>`;
+            });
+            area.innerHTML = html;
+        })
+        .catch(() => {
+            area.innerHTML = '<div style="padding:20px;color:#dc2626;">⚠️ Gagal memuat data penilaian.<br><small style="color:#9ca3af;">Pastikan Buat Pertanyaan Penilaian sudah diatur. <a href="custom_penilaian.php" target="_blank" style="color:#1a4731;">Buka Buat Pertanyaan Penilaian ↗</a></small></div>';
+        });
+}
+
+function resetKomponenArea() {
+    document.getElementById('komponen-area').innerHTML =
+        '<div style="text-align:center;padding:40px;color:#9ca3af;border:2px dashed #e5e7eb;border-radius:12px;"><div style="font-size:36px;margin-bottom:12px;">📋</div><p>Pilih nama guru dan tahun ajaran untuk menampilkan form penilaian.</p></div>';
+}
+
+// Edit mode: pastikan dropdown aktif
+<?php if ($editPenilaian): ?>
+document.getElementById('sel_komponen').disabled = false;
+<?php endif; ?>
+</script>
+
+<?php else: ?>
+<div class="data-table-card">
+    <div class="card-header-custom">
+        <div class="card-title-custom">📝 Daftar Penilaian Kinerja</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button id="btnHapusTerpilih" onclick="hapusTerpilih()" class="btn-danger-custom" style="display:none;">
+                🗑 Hapus Terpilih (<span id="jumlahTerpilih">0</span>)
+            </button>
+            <button onclick="hapusSemua()" class="btn-danger-custom">🗑 Hapus Semua</button>
+            <a href="penilaian.php?action=add" class="btn-primary-custom">+ Tambah Penilaian</a>
+        </div>
+    </div>
+
+    <!-- PANEL FILTER -->
+    <form method="GET" action="penilaian.php" autocomplete="off" id="filterForm"
+          style="background:#f8fafc;border-radius:10px;padding:14px 18px;margin-bottom:18px;border:1px solid #e5e7eb;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+        <div style="flex:1;min-width:160px;">
+            <div class="form-label-custom" style="margin-bottom:4px;">📅 Tahun Ajaran</div>
+            <select name="filter_ta" class="form-control-custom" style="width:100%;" onchange="document.getElementById('filterForm').submit()">
+                <option value="">— Semua Tahun —</option>
+                <?php foreach ($listTA as $ta): ?>
+                    <option value="<?= htmlspecialchars($ta) ?>"
+                        <?= ($filterTA === $ta) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($ta) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div style="flex:1;min-width:150px;">
+            <div class="form-label-custom" style="margin-bottom:4px;">👤 Tipe Guru</div>
+            <select name="filter_tipe" class="form-control-custom" style="width:100%;" onchange="document.getElementById('filterForm').submit()">
+                <option value="">— Semua Tipe —</option>
+                <?php foreach ($tipeLabels as $kode => $label): ?>
+                    <option value="<?= htmlspecialchars($kode) ?>"
+                        <?= ($filterTipe === $kode) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($label) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div style="flex:2;min-width:180px;">
+            <div class="form-label-custom" style="margin-bottom:4px;">🔍 Nama Guru</div>
+            <select name="filter_guru" class="form-control-custom" style="width:100%;" onchange="document.getElementById('filterForm').submit()">
+                <option value="0">— Semua Guru —</option>
+                <?php foreach ($guruAll as $g): ?>
+                    <option value="<?= (int)$g['id_guru'] ?>"
+                        <?= ($filterGuru === (int)$g['id_guru']) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($g['nama']) ?>
+                        <?= $g['jabatan'] ? ' ('.$g['jabatan'].')' : '' ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:1px;">
+            <?php if ($filterTA !== '' || $filterTipe !== '' || $filterGuru > 0): ?>
+                <a href="penilaian.php" class="btn-cancel" style="white-space:nowrap;">✕ Reset</a>
+            <?php endif; ?>
+        </div>
+    </form>
+
+    <?php
+    $totalAll = $pdo->query("SELECT COUNT(*) FROM penilaian")->fetchColumn();
+    $totalFiltered = count($penilaianList);
+    $adaFilter = ($filterTA !== '' || $filterTipe !== '' || $filterGuru > 0);
+    ?>
+    <?php if ($adaFilter): ?>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:10px;padding:0 2px;">
+        Menampilkan <strong style="color:#1a4731;"><?= $totalFiltered ?></strong> dari
+        <strong><?= $totalAll ?></strong> total penilaian
+        <?php if ($filterTA): ?> &middot; Tahun Ajaran: <strong><?= htmlspecialchars($filterTA) ?></strong><?php endif; ?>
+        <?php if ($filterTipe): ?> &middot; Tipe: <strong><?= htmlspecialchars($tipeLabels[$filterTipe] ?? $filterTipe) ?></strong><?php endif; ?>
+        <?php if ($filterGuru): ?>
+            <?php
+            $namaGF = '';
+            foreach ($guruAll as $g) { if ((int)$g['id_guru'] === $filterGuru) { $namaGF = $g['nama']; break; } }
+            ?>
+            &middot; Guru: <strong><?= htmlspecialchars($namaGF) ?></strong>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <form id="formHapusTerpilih" method="POST" action="penilaian.php?action=delete_selected" autocomplete="off">
+    <style>
+    #tblPenilaian thead th { background:#f1f5f9; position:sticky; top:0; z-index:1; font-size:12px; font-weight:600; color:#475569; padding:10px 12px; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
+    #tblPenilaian tbody tr:hover { background:#f8fafc; }
+    #tblPenilaian tbody td { padding:10px 12px; vertical-align:middle; border-bottom:1px solid #f1f5f9; }
+    #tblPenilaian { border-collapse:collapse; }
+    </style>
+    <div style="overflow-x:auto;">
+    <table class="table table-hover" id="tblPenilaian" style="font-size:13px;width:100%;min-width:700px;">
+        <thead style="background:#f8fafc;">
+            <tr>
+                <th style="width:36px;"><input type="checkbox" id="checkAll" onchange="toggleAll(this)"></th>
+                <th>No</th><th>Nama Guru</th><th>Tipe Guru</th><th>Jabatan</th><th>Tahun Ajaran</th><th>Tgl Penilaian</th><th>Nilai Rata²</th><th>Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($penilaianList)): ?>
+            <tr><td colspan="9" style="text-align:center;padding:40px;color:#9ca3af;">
+                <div style="font-size:32px;margin-bottom:8px;">📋</div>
+                <div>Tidak ada data penilaian<?= $adaFilter ? ' untuk filter yang dipilih' : '' ?>.</div>
+                <?php if ($adaFilter): ?><div style="margin-top:6px;"><a href="penilaian.php" style="color:var(--hijau);">Tampilkan semua penilaian</a></div><?php endif; ?>
+            </td></tr>
+            <?php else: ?>
+            <?php foreach ($penilaianList as $i => $p): ?>
+            <tr>
+                <td><input type="checkbox" name="selected_ids[]" value="<?= $p['id_penilaian'] ?>" class="row-check" onchange="updateTerpilih()"></td>
+                <td><?= $i+1 ?></td>
+                <td><strong><?= htmlspecialchars($p['nama']) ?></strong></td>
+                <td><span style="background:#eff6ff;color:#1e40af;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:600;"><?= htmlspecialchars($tipeLabels[$p['tipe']] ?? $p['tipe']) ?></span></td>
+                <td><small><?= htmlspecialchars($p['jabatan']??'') ?></small></td>
+                <td><small><?= htmlspecialchars($p['periode']) ?></small></td>
+                <td><?= date('d/m/Y', strtotime($p['tanggal_penilaian'])) ?></td>
+                <td>
+                    <?php if ($p['rata_nilai']): ?>
+                        <span style="font-weight:600;color:<?= $p['rata_nilai']>=75?'#16a34a':($p['rata_nilai']>=50?'#d97706':'#dc2626') ?>">
+                            <?= $p['rata_nilai'] ?>%
+                        </span>
+                    <?php else: ?><span class="text-muted">-</span><?php endif; ?>
+                </td>
+                <td>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                        <a href="penilaian.php?action=edit&id=<?= $p['id_penilaian'] ?>" class="btn-primary-custom btn-sm-custom btn-edit">Edit</a>
+                        <a href="cetak.php?id=<?= $p['id_penilaian'] ?>" class="btn-primary-custom btn-sm-custom btn-view" target="_blank">Cetak</a>
+                        <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDelete(<?= $p['id_penilaian'] ?>,'penilaian.php')">Hapus</button>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+    </div><!-- end overflow-x -->
+    </form>
+</div>
+<script>
+function toggleAll(m){document.querySelectorAll('.row-check').forEach(cb=>cb.checked=m.checked);updateTerpilih();}
+function updateTerpilih(){
+    const n=document.querySelectorAll('.row-check:checked').length;
+    document.getElementById('jumlahTerpilih').textContent=n;
+    document.getElementById('btnHapusTerpilih').style.display=n>0?'':'none';
+    const all=document.querySelectorAll('.row-check'),m=document.getElementById('checkAll');
+    if(m)m.checked=all.length>0&&n===all.length;
+}
+function hapusTerpilih(){const n=document.querySelectorAll('.row-check:checked').length;if(!n)return;if(!confirm('Hapus '+n+' penilaian?'))return;document.getElementById('formHapusTerpilih').submit();}
+function hapusSemua(){
+    const total = <?= json_encode(count($penilaianList)) ?>;
+    if(!confirm('Hapus ' + total + ' penilaian yang sedang ditampilkan?')) return;
+    const f = document.createElement('form');
+    f.method = 'POST';
+    f.action = 'penilaian.php?action=delete_all';
+    [
+        ['filter_ta',   <?= json_encode($filterTA) ?>],
+        ['filter_tipe', <?= json_encode($filterTipe) ?>],
+        ['filter_guru', <?= json_encode($filterGuru) ?>],
+    ].forEach(([name, val]) => {
+        const i = document.createElement('input');
+        i.type = 'hidden'; i.name = name; i.value = val;
+        f.appendChild(i);
+    });
+    document.body.appendChild(f);
+    f.submit();
+}
+</script>
+<?php endif; ?>
 <?php require_once 'includes/footer.php'; ?>

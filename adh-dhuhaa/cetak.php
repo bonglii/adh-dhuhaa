@@ -210,6 +210,9 @@ requireLogin(); ?>
         .pkg-table td {
             border: 1px solid #ccc;
             padding: 8px 10px;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            white-space: normal;
         }
 
         .pkg-table thead tr th {
@@ -382,10 +385,10 @@ requireLogin(); ?>
         if ($filterTipeCetak && !isValidTipe($pdo, $filterTipeCetak)) $filterTipeCetak = '';
 
         $sqlAll = "
-            SELECT p.id
+            SELECT p.id_penilaian
             FROM penilaian p
-            JOIN guru g ON p.guru_id = g.id
-            WHERE p.id IS NOT NULL
+            JOIN guru g ON p.id_guru = g.id_guru
+            WHERE p.id_penilaian IS NOT NULL
         ";
         $paramsAll = [];
         if ($filterPeriodeCetak) {
@@ -396,7 +399,7 @@ requireLogin(); ?>
             $sqlAll      .= " AND g.tipe = ?";
             $paramsAll[] = $filterTipeCetak;
         }
-        $sqlAll .= " ORDER BY g.tipe, g.nama, p.id ASC";
+        $sqlAll .= " ORDER BY g.tipe, g.nama, p.id_penilaian ASC";
         $stmtAll = $pdo->prepare($sqlAll);
         $stmtAll->execute($paramsAll);
         $allIds = $stmtAll->fetchAll(PDO::FETCH_COLUMN);
@@ -404,7 +407,7 @@ requireLogin(); ?>
         if (empty($allIds)) {
             echo '<p style="padding:40px;text-align:center;font-family:sans-serif;">
                     Tidak ada data penilaian untuk dicetak.
-                    <br><br><a href="javascript:history.back()" style="color:#1a4731;">← Kembali ke Rekap</a>
+                    <br><br><a href="javascript:window.close()" style="color:#1a4731;">← Kembali ke Rekap</a>
                   </p>';
             exit;
         }
@@ -448,37 +451,57 @@ requireLogin(); ?>
     // Load penilaian
     $stmt = $pdo->prepare("
     SELECT p.*, g.nama, g.nrg, g.jabatan, g.tmt_guru, g.tipe
-    FROM penilaian p JOIN guru g ON p.guru_id = g.id
-    WHERE p.id = ?
+    FROM penilaian p JOIN guru g ON p.id_guru = g.id_guru
+    WHERE p.id_penilaian = ?
 ");
     $stmt->execute([$id]);
     $pen = $stmt->fetch();
 
-    // Skip penilaian yang tidak ditemukan (mode cetak semua)
-    if (!$pen) { continue; }
+    // Skip penilaian yang tidak ditemukan (mode cetak semua)\n    if (!$pen) { continue; }
 
-    // Load detail
-    $detailStmt = $pdo->prepare("
-    SELECT dp.nilai, kp.nama_kategori AS kategori, i.nomor_item, i.nama_item
-    FROM detail_penilaian dp
-    JOIN item i ON dp.item_id = i.id
-    JOIN komponen_penilaian kp ON i.komponen_id = kp.id
-    WHERE dp.penilaian_id = ?
-    ORDER BY kp.urutan, i.urutan
-");
-    $detailStmt->execute([$id]);
-    $details = $detailStmt->fetchAll();
-
-    // Group by kategori (semua item, baik standar maupun tambahan, sudah tersimpan
-    // di tabel detail_penilaian melalui JOIN item → komponen_penilaian)
-    $grouped = [];
-    foreach ($details as $d) {
-        $grouped[$d['kategori']][] = $d;
-    }
-    // $groupedCustom tidak digunakan lagi karena item tambahan sudah masuk $grouped
-    // via tabel komponen_penilaian (is_tambahan=1) — blok HTML custom di bawah
-    // dipertahankan sebagai fallback jika suatu saat diperlukan pemisahan tampilan.
+    $grouped       = [];
     $groupedCustom = [];
+
+    if (!empty($pen['id_komponen'])) {
+        // ── Penilaian Custom: item dari item via tabel isi ──────────────
+        $detailStmt = $pdo->prepare("
+            SELECT dp.nilai,
+                   s.nama_indikator AS kategori,
+                   s.nomor_item,
+                   m.nama_item,
+                   s.urutan_isi,
+                   s.id_item
+            FROM hasil dp
+            JOIN isi s   ON dp.id_item = s.id_item
+                        AND s.id_komponen = ?
+            JOIN item m ON s.id_item = m.id_item
+            WHERE dp.id_penilaian = ?
+            ORDER BY s.urutan_isi, s.nomor_item
+        ");
+        $detailStmt->execute([$pen['id_komponen'], $id]);
+        $details = $detailStmt->fetchAll();
+
+        foreach ($details as $d) {
+            $grouped[$d['kategori']][] = $d;
+        }
+    } else {
+        // ── Penilaian Standar: item via tabel isi → item ──────────────
+        $detailStmt = $pdo->prepare("
+            SELECT dp.nilai, s.nama_indikator AS kategori, s.nomor_item, i.nama_item,
+                   s.urutan_isi
+            FROM hasil dp
+            JOIN isi s   ON dp.id_item = s.id_item AND s.id_komponen = ?
+            JOIN item i  ON dp.id_item = i.id_item
+            WHERE dp.id_penilaian = ?
+            ORDER BY s.urutan_isi, s.nomor_item
+        ");
+        $detailStmt->execute([$pen['id_komponen'], $id]);
+        $details = $detailStmt->fetchAll();
+
+        foreach ($details as $d) {
+            $grouped[$d['kategori']][] = $d;
+        }
+    }
 
     // Hitung nilai per kategori dan total
     $totalNilai = 0;
@@ -494,9 +517,7 @@ requireLogin(); ?>
         $totalMax += $max;
     }
 
-    // BUG-04 FIX: Hitung subTotalsCustom sebelum dipakai di template HTML.
-    // Sebelumnya: diinisialisasi [] tanpa dihitung, menyebabkan PHP Warning
-    // jika $groupedCustom berisi data (akses ke key yang tidak ada).
+    // Hitung custom komponen jika ada
     $subTotalsCustom = [];
     foreach ($groupedCustom as $kat => $items) {
         $sum = array_sum(array_column($items, 'nilai'));
@@ -505,7 +526,13 @@ requireLogin(); ?>
         $subTotalsCustom[$kat] = ['sum' => $sum, 'max' => $max, 'pct' => $pct];
     }
 
-    $totalPct = $totalMax > 0 ? round($totalNilai / $totalMax * 100, 2) : 0;
+    // Nilai akhir = rata-rata persen per indikator (dinamis, bukan flat sum)
+    // Sehingga tiap indikator bobotnya sama apapun jumlah itemnya
+    $allPcts = array_merge(
+        array_column($subTotals, 'pct'),
+        array_column($subTotalsCustom, 'pct')
+    );
+    $totalPct = count($allPcts) > 0 ? round(array_sum($allPcts) / count($allPcts), 2) : 0;
 
     [$predikat, $stars] = getPredikat($totalPct);
 
@@ -514,7 +541,14 @@ requireLogin(); ?>
 
     <div class="no-print">
         <button class="btn-cetak" onclick="window.print()">🖨 Cetak / PDF</button>
-        <button class="btn-back" onclick="history.back()">← Kembali</button>
+        <button class="btn-back" onclick="
+            var from = '<?= htmlspecialchars($_GET['from'] ?? '') ?>';
+            if (from === 'dashboard') {
+                history.back();
+            } else {
+                window.close();
+            }
+        ">← Kembali</button>
     </div>
 
     <div class="page-container">

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Apr 02, 2026 at 02:31 AM
+-- Generation Time: Apr 10, 2026 at 04:49 AM
 -- Server version: 8.0.30
 -- PHP Version: 8.1.10
 
@@ -24,24 +24,11 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
--- Table structure for table `detail_penilaian`
---
-
-CREATE TABLE `detail_penilaian` (
-  `id` int NOT NULL,
-  `penilaian_id` int NOT NULL,
-  `item_id` int NOT NULL,
-  `nilai` tinyint(1) DEFAULT '1'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- --------------------------------------------------------
-
---
 -- Table structure for table `guru`
 --
 
 CREATE TABLE `guru` (
-  `id` int NOT NULL,
+  `id_guru` int NOT NULL,
   `nama` varchar(100) NOT NULL,
   `nrg` varchar(50) DEFAULT NULL,
   `tmt_guru` date DEFAULT NULL,
@@ -56,7 +43,7 @@ CREATE TABLE `guru` (
 -- Dumping data for table `guru`
 --
 
-INSERT INTO `guru` (`id`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kepegawaian`, `tipe`, `created_at`, `updated_at`) VALUES
+INSERT INTO `guru` (`id_guru`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kepegawaian`, `tipe`, `created_at`, `updated_at`) VALUES
 (1, 'Sudila Wasih, S.Pd', '202007 02051998 024', '2020-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (2, 'Siti Nur Holis, S.Pd', '202107 01031997 036', '2021-07-01', 'Guru Pengganti & Tes Jilid', 'Guru Pengganti & Tes Jilid', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (3, 'Pramuja, S.M', '202107 113061996 035', '2021-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
@@ -129,9 +116,9 @@ INSERT INTO `guru` (`id`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kepegawa
 --
 
 CREATE TABLE `guru_history` (
-  `id` int NOT NULL,
+  `id_guru_history` int NOT NULL,
   `aksi` enum('tambah','edit','hapus') NOT NULL,
-  `guru_id` int DEFAULT NULL,
+  `id_guru` int DEFAULT NULL,
   `nama` varchar(100) NOT NULL,
   `nrg` varchar(50) DEFAULT NULL,
   `tmt_guru` date DEFAULT NULL,
@@ -146,136 +133,54 @@ CREATE TABLE `guru_history` (
 -- --------------------------------------------------------
 
 --
--- Table structure for table `item`
+-- Table structure for table `hasil`
 --
 
-CREATE TABLE `item` (
-  `id` int NOT NULL,
-  `komponen_id` int NOT NULL,
-  `nomor_item` varchar(10) NOT NULL,
-  `nama_item` varchar(255) NOT NULL,
-  `urutan` int DEFAULT '0'
+CREATE TABLE `hasil` (
+  `id_hasil` int NOT NULL,
+  `id_penilaian` int NOT NULL,
+  `id_item` int NOT NULL COMMENT 'FK ke item.id_item',
+  `nilai` tinyint(1) DEFAULT '1'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
---
--- Dumping data for table `item`
---
-
-INSERT INTO `item` (`id`, `komponen_id`, `nomor_item`, `nama_item`, `urutan`) VALUES
-(1, 1, '1.1', 'Persentase Kehadiran', 1),
-(2, 1, '1.2', 'Datang di sekolah tepat waktu dan kepulangan tepat waktu', 2),
-(3, 1, '1.3', 'Berpakaian seragam sesuai ketentuan', 3),
-(4, 1, '1.4', 'Ikut serta dalam upacara dan senam di sekolah', 4),
-(5, 1, '1.5', 'Ikut serta dalam rapat-rapat di sekolah', 5),
-(6, 1, '1.6', 'Ikut serta dalam Inspirasi Pagi', 6),
-(7, 1, '1.7', 'Kehadiran pembinaan sabtu', 7),
-(8, 1, '1.8', 'Adab minta izin dan menulis dibuku izin', 8),
-(9, 2, '2.1', 'Menuliskan hasil evaluasi tahsin, tahfizh dan adab', 1),
-(10, 2, '2.2', 'Menyampaikan materi pembelajaran bahasa arab', 2),
-(11, 2, '2.3', 'Metode pengajaran', 3),
-(12, 2, '2.4', 'Membuat halaqoh yang tertib', 4),
-(13, 2, '2.5', 'Mengajar sesuai SOP', 5),
-(14, 2, '2.6', 'Kedisiplinan masuk dan keluar halaqoh', 6),
-(15, 2, '2.7', 'Menggunakan bahasa arab pembukaan dan penutupan halaqoh', 7),
-(16, 2, '2.8', 'Menyampaikan capaian perkembangan siswa kepada orang tua', 8),
-(17, 3, '3.1', 'Melaksanakan tugas yang diberikan oleh Kepala Sekolah', 1),
-(18, 3, '3.2', 'Membantu teman dalam ikut memecahkan masalah', 2),
-(19, 3, '3.3', 'KBM', 3),
-(20, 3, '3.4', 'Menciptakan hubungan yang harmonis dengan orangtua/wali murid', 4),
-(21, 3, '3.5', 'Menciptakan hubungan yang harmonis dengan guru dan GTK', 5),
-(22, 3, '3.6', 'Amanah dan Aktif berpartisapasi dalam kepanitiaan', 6),
-(23, 3, '3.7', 'Piket kedatangan dan kepulangan', 7),
-(24, 3, '3.8', 'Kerjasama dengan guru kelas', 8),
-(25, 4, '1.1', 'Persentase Kehadiran', 1),
-(26, 4, '1.2', 'Datang di sekolah tepat waktu dan kepulangan tepat waktu', 2),
-(27, 4, '1.3', 'Berpakaian seragam sesuai ketentuan', 3),
-(28, 4, '1.4', 'Ikut serta dalam upacara dan senam di sekolah', 4),
-(29, 4, '1.5', 'Ikut serta dalam rapat-rapat di sekolah', 5),
-(30, 4, '1.6', 'Ikut serta dalam Inspirasi Pagi', 6),
-(31, 4, '1.7', 'Kehadiran pembinaan sabtu', 7),
-(32, 4, '1.8', 'Adab minta izin dan menulis dibuku izin', 8),
-(33, 5, '2.1', 'Membuat Administrasi pembelajaran (Promes, Modul Ajar, jurnal harian, dll)', 1),
-(34, 5, '2.2', 'Melaksanakan pembelajaran P5 dan Life Skill', 2),
-(35, 5, '2.3', 'Metode pengajaran', 3),
-(36, 5, '2.4', 'Membuat program perbaikan', 4),
-(37, 5, '2.5', 'Membimbing Siswa wudhu', 5),
-(38, 5, '2.6', 'Kebersihan dan kerapian kelas', 6),
-(39, 5, '2.7', 'Membimbing Siswa Sholat, Dzikir dan Doa', 7),
-(40, 5, '2.8', 'Memuat Kurikulum keislaman', 8),
-(41, 6, '3.1', 'Melaksanakan tugas yang diberikan oleh Kepala Sekolah', 1),
-(42, 6, '3.2', 'Membantu teman dalam ikut memecahkan masalah', 2),
-(43, 6, '3.3', 'KBM', 3),
-(44, 6, '3.4', 'Menciptakan hubungan yang harmonis dengan orangtua/wali murid', 4),
-(45, 6, '3.5', 'Menciptakan hubungan yang harmonis dengan guru dan GTK', 5),
-(46, 6, '3.6', 'Amanah dan Aktif berpartisapasi dalam kepanitiaan', 6),
-(47, 6, '3.7', 'Piket kedatangan dan kepulangan', 7),
-(48, 7, '1.1', 'Persentase Kehadiran', 1),
-(49, 7, '1.2', 'Datang di sekolah tepat waktu dan kepulangan tepat waktu', 2),
-(50, 7, '1.3', 'Berpakaian seragam sesuai ketentuan', 3),
-(51, 7, '1.4', 'Ikut serta dalam upacara dan senam di sekolah', 4),
-(52, 7, '1.5', 'Ikut serta dalam rapat-rapat di sekolah', 5),
-(53, 7, '1.6', 'Ikut serta dalam Inspirasi Pagi', 6),
-(54, 7, '1.7', 'Kehadiran pembinaan sabtu', 7),
-(55, 7, '1.8', 'Adab minta izin dan menulis dibuku izin', 8),
-(56, 8, '2.1', 'Membuat Administrasi pembelajaran (Promes, Modul Ajar, jurnal harian, dll)', 1),
-(57, 8, '2.2', 'Metode pengajaran', 2),
-(58, 8, '2.4', 'Membuat program perbaikan', 3),
-(59, 8, '2.5', 'Membimbing Siswa wudhu', 4),
-(60, 8, '2.6', 'Kebersihan dan kerapian kelas', 5),
-(61, 8, '2.7', 'Membimbing Siswa Sholat, Dzikir dan Doa', 6),
-(62, 8, '2.8', 'Memuat Kurikulum keislaman', 7),
-(63, 9, '3.1', 'Melaksanakan tugas yang diberikan oleh Kepala Sekolah', 1),
-(64, 9, '3.2', 'Membantu teman dalam ikut memecahkan masalah', 2),
-(65, 9, '3.3', 'KBM', 3),
-(66, 9, '3.4', 'Menciptakan hubungan yang harmonis dengan orangtua/wali murid', 4),
-(67, 9, '3.5', 'Menciptakan hubungan yang harmonis dengan guru dan GTK', 5),
-(68, 9, '3.6', 'Amanah dan Aktif berpartisapasi dalam kepanitiaan', 6),
-(69, 9, '3.7', 'Piket kedatangan dan kepulangan', 7),
-(74, 13, '1.1', 'Persentase Kehadiran', 1),
-(75, 13, '1.2', 'Datang di sekolah tepat waktu dan kepulangan tepat waktu', 2),
-(76, 13, '1.3', 'Berpakaian seragam sesuai ketentuan', 3),
-(77, 13, '1.4', 'Ikut serta dalam upacara dan senam di sekolah', 4),
-(78, 13, '1.5', 'Ikut serta dalam rapat-rapat di sekolah', 5),
-(79, 13, '1.6', 'Ikut serta dalam Inspirasi Pagi', 6),
-(80, 14, '2.1', 'Kerjasama dengan sesama tenaga pendidik dan kependidikan', 1),
-(81, 14, '2.2', 'Membantu kelancaran kegiatan sekolah', 2),
-(82, 14, '2.3', 'Menjaga hubungan baik dengan wali murid', 3),
-(83, 15, '3.1', 'Melaksanakan tugas pokok sesuai jabatan', 1),
-(84, 15, '3.2', 'Menyelesaikan pekerjaan tepat waktu', 2),
-(85, 15, '3.3', 'Menjaga kebersihan dan kerapian lingkungan kerja', 3),
-(86, 15, '3.4', 'Bertanggung jawab atas tugas yang diberikan', 4);
 
 -- --------------------------------------------------------
 
 --
--- Table structure for table `komponen_penilaian`
+-- Table structure for table `isi`
 --
 
-CREATE TABLE `komponen_penilaian` (
-  `id` int NOT NULL,
-  `tipe_guru` varchar(20) NOT NULL COMMENT 'FK ke tipe_guru.kode',
-  `nama_kategori` varchar(100) NOT NULL,
-  `urutan` int DEFAULT '0',
-  `is_tambahan` tinyint(1) DEFAULT '0' COMMENT '0=standar, 1=ditambahkan saat penilaian'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+CREATE TABLE `isi` (
+  `id_isi` int NOT NULL,
+  `id_komponen` int NOT NULL COMMENT 'FK ke komponen.id_komponen',
+  `nama_indikator` varchar(100) NOT NULL COMMENT 'Nama indikator dalam custom penilaian',
+  `urutan_isi` int DEFAULT '0' COMMENT 'Urutan indikator dalam komponen',
+  `id_item` int NOT NULL COMMENT 'FK ke item.id_item',
+  `nomor_item` varchar(10) NOT NULL COMMENT 'cth: 1.1, 1.2, 2.1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Item pilihan per custom penilaian';
+
+-- --------------------------------------------------------
 
 --
--- Dumping data for table `komponen_penilaian`
+-- Table structure for table `item`
 --
 
-INSERT INTO `komponen_penilaian` (`id`, `tipe_guru`, `nama_kategori`, `urutan`, `is_tambahan`) VALUES
-(1, 'guru_quran', 'Disiplin', 1, 0),
-(2, 'guru_quran', 'Pelaksanaan Pembelajaran', 2, 0),
-(3, 'guru_quran', 'Kerjasama', 3, 0),
-(4, 'guru_kelas', 'Disiplin', 1, 0),
-(5, 'guru_kelas', 'Pelaksanaan Pembelajaran', 2, 0),
-(6, 'guru_kelas', 'Kerjasama', 3, 0),
-(7, 'mapel', 'Disiplin', 1, 0),
-(8, 'mapel', 'Pelaksanaan Pembelajaran', 2, 0),
-(9, 'mapel', 'Kerjasama', 3, 0),
-(13, 'gtk', 'Disiplin', 1, 0),
-(14, 'gtk', 'Kerjasama', 2, 0),
-(15, 'gtk', 'Kinerja', 3, 0);
+CREATE TABLE `item` (
+  `id_item` int NOT NULL,
+  `nama_item` varchar(255) NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Bank soal item penilaian global (rename dari item_master)';
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `komponen`
+--
+
+CREATE TABLE `komponen` (
+  `id_komponen` int NOT NULL,
+  `ta_komponen` varchar(255) NOT NULL COMMENT 'Nama/deskripsi komponen',
+  `type_guru` varchar(20) NOT NULL COMMENT 'FK ke tipe_guru.kode'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tabel komponen penilaian tambahan';
 
 -- --------------------------------------------------------
 
@@ -284,11 +189,10 @@ INSERT INTO `komponen_penilaian` (`id`, `tipe_guru`, `nama_kategori`, `urutan`, 
 --
 
 CREATE TABLE `penilaian` (
-  `id` int NOT NULL,
-  `guru_id` int NOT NULL,
+  `id_penilaian` int NOT NULL,
+  `id_guru` int NOT NULL,
+  `id_komponen` int DEFAULT NULL COMMENT 'FK ke komponen.id_komponen (custom penilaian yang digunakan)',
   `periode` varchar(100) NOT NULL,
-  `periode_awal` date DEFAULT NULL,
-  `periode_akhir` date DEFAULT NULL,
   `tanggal_penilaian` date NOT NULL,
   `penilai` varchar(100) DEFAULT NULL,
   `jabatan_penilai` varchar(100) DEFAULT NULL,
@@ -297,6 +201,14 @@ CREATE TABLE `penilaian` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+--
+-- Dumping data for table `penilaian`
+--
+
+INSERT INTO `penilaian` (`id_penilaian`, `id_guru`, `id_komponen`, `periode`, `tanggal_penilaian`, `penilai`, `jabatan_penilai`, `catatan`, `created_at`, `updated_at`) VALUES
+(16, 8, 6, '2024/2025', '2026-04-10', 'Hasyim Ashari, S.T', 'Kepala Sekolah', '', '2026-04-10 01:06:53', '2026-04-10 01:06:53'),
+(17, 8, 7, '2025/2026', '2026-04-10', 'Hasyim Ashari, S.T', 'Kepala Sekolah', '', '2026-04-10 01:08:42', '2026-04-10 01:08:42');
+
 -- --------------------------------------------------------
 
 --
@@ -304,17 +216,17 @@ CREATE TABLE `penilaian` (
 --
 
 CREATE TABLE `tipe_guru` (
-  `id` int NOT NULL,
+  `id_tipe_guru` int NOT NULL,
   `kode` varchar(20) NOT NULL COMMENT 'Slug unik: guru_quran, guru_kelas, mapel, gtk',
-  `label` varchar(100) NOT NULL COMMENT 'Label tampil di UI: Guru Qur''an, Guru Kelas, dst',
+  `label` varchar(100) NOT NULL COMMENT 'Label tampil di UI',
   `urutan` int DEFAULT '0' COMMENT 'Urutan tampil di dropdown'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Master tipe/kategori guru';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
 -- Dumping data for table `tipe_guru`
 --
 
-INSERT INTO `tipe_guru` (`id`, `kode`, `label`, `urutan`) VALUES
+INSERT INTO `tipe_guru` (`id_tipe_guru`, `kode`, `label`, `urutan`) VALUES
 (1, 'guru_quran', 'Guru Qur\'an', 1),
 (2, 'guru_kelas', 'Guru Kelas', 2),
 (3, 'mapel', 'Guru Mapel', 3),
@@ -327,12 +239,11 @@ INSERT INTO `tipe_guru` (`id`, `kode`, `label`, `urutan`) VALUES
 --
 
 CREATE TABLE `users` (
-  `id` int NOT NULL,
+  `id_users` int NOT NULL,
   `username` varchar(50) NOT NULL,
   `password` varchar(255) NOT NULL,
   `nama_lengkap` varchar(100) NOT NULL,
   `role` enum('admin','kepala_sekolah') DEFAULT 'admin',
-  `must_change_password` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Wajib ganti password saat login pertama',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -340,78 +251,77 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `nama_lengkap`, `role`, `must_change_password`, `created_at`) VALUES
-(1, 'admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin', 1, '2026-03-30 02:49:31'),
-(2, 'kepala', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Hasyim Ashari, S.T', 'kepala_sekolah', 1, '2026-03-30 02:49:31');
+INSERT INTO `users` (`id_users`, `username`, `password`, `nama_lengkap`, `role`, `created_at`) VALUES
+(1, 'admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin', '2026-03-30 02:49:31'),
+(2, 'kepala', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Hasyim Ashari, S.T', 'kepala_sekolah', '2026-03-30 02:49:31');
 
 --
 -- Indexes for dumped tables
 --
 
 --
--- Indexes for table `detail_penilaian`
---
-ALTER TABLE `detail_penilaian`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `penilaian_id` (`penilaian_id`),
-  ADD KEY `item_id` (`item_id`);
-
---
 -- Indexes for table `guru`
 --
 ALTER TABLE `guru`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uq_guru_nrg` (`nrg`) COMMENT 'Setiap NRG harus unik per guru',
+  ADD PRIMARY KEY (`id_guru`),
   ADD KEY `fk_guru_tipe` (`tipe`);
 
 --
 -- Indexes for table `guru_history`
 --
 ALTER TABLE `guru_history`
-  ADD PRIMARY KEY (`id`),
-  -- SARAN-05: Index untuk filter history per guru dan per aksi
-  ADD KEY `idx_history_guru_id` (`guru_id`),
-  ADD KEY `idx_history_aksi` (`aksi`),
-  ADD KEY `idx_history_waktu` (`waktu`);
+  ADD PRIMARY KEY (`id_guru_history`);
+
+--
+-- Indexes for table `hasil`
+--
+ALTER TABLE `hasil`
+  ADD PRIMARY KEY (`id_hasil`),
+  ADD KEY `id_penilaian` (`id_penilaian`),
+  ADD KEY `id_item` (`id_item`);
+
+--
+-- Indexes for table `isi`
+--
+ALTER TABLE `isi`
+  ADD PRIMARY KEY (`id_isi`),
+  ADD KEY `fk_isi_komponen` (`id_komponen`),
+  ADD KEY `fk_isi_item` (`id_item`);
 
 --
 -- Indexes for table `item`
 --
 ALTER TABLE `item`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `komponen_id` (`komponen_id`);
+  ADD PRIMARY KEY (`id_item`),
+  ADD UNIQUE KEY `uq_nama_item` (`nama_item`);
 
 --
--- Indexes for table `komponen_penilaian`
+-- Indexes for table `komponen`
 --
-ALTER TABLE `komponen_penilaian`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_komponen_tipe` (`tipe_guru`);
+ALTER TABLE `komponen`
+  ADD PRIMARY KEY (`id_komponen`),
+  ADD KEY `fk_komponen_type_guru` (`type_guru`);
 
 --
 -- Indexes for table `penilaian`
 --
 ALTER TABLE `penilaian`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `guru_id` (`guru_id`),
-  -- SARAN-05: Index komposit untuk cek duplikat (guru + periode) — dipakai di validasi penilaian.php
-  ADD KEY `idx_penilaian_guru_periode` (`guru_id`, `periode_awal`, `periode_akhir`),
-  -- SARAN-05: Index untuk filter rekap dan ranking berdasarkan periode
-  ADD KEY `idx_penilaian_periode` (`periode`),
-  ADD KEY `idx_penilaian_tanggal` (`tanggal_penilaian`);
+  ADD PRIMARY KEY (`id_penilaian`),
+  ADD KEY `id_guru` (`id_guru`),
+  ADD KEY `fk_penilaian_komponen` (`id_komponen`);
 
 --
 -- Indexes for table `tipe_guru`
 --
 ALTER TABLE `tipe_guru`
-  ADD PRIMARY KEY (`id`),
+  ADD PRIMARY KEY (`id_tipe_guru`),
   ADD UNIQUE KEY `kode` (`kode`);
 
 --
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
-  ADD PRIMARY KEY (`id`),
+  ADD PRIMARY KEY (`id_users`),
   ADD UNIQUE KEY `username` (`username`);
 
 --
@@ -419,63 +329,62 @@ ALTER TABLE `users`
 --
 
 --
--- AUTO_INCREMENT for table `detail_penilaian`
---
-ALTER TABLE `detail_penilaian`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=247;
-
---
 -- AUTO_INCREMENT for table `guru`
 --
 ALTER TABLE `guru`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=65;
+  MODIFY `id_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=65;
 
 --
 -- AUTO_INCREMENT for table `guru_history`
 --
 ALTER TABLE `guru_history`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id_guru_history` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `hasil`
+--
+ALTER TABLE `hasil`
+  MODIFY `id_hasil` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=272;
+
+--
+-- AUTO_INCREMENT for table `isi`
+--
+ALTER TABLE `isi`
+  MODIFY `id_isi` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=28;
 
 --
 -- AUTO_INCREMENT for table `item`
 --
 ALTER TABLE `item`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=94;
+  MODIFY `id_item` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=44;
 
 --
--- AUTO_INCREMENT for table `komponen_penilaian`
+-- AUTO_INCREMENT for table `komponen`
 --
-ALTER TABLE `komponen_penilaian`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+ALTER TABLE `komponen`
+  MODIFY `id_komponen` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `penilaian`
 --
 ALTER TABLE `penilaian`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `id_penilaian` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `tipe_guru`
 --
 ALTER TABLE `tipe_guru`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id_tipe_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id_users` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- Constraints for dumped tables
 --
-
---
--- Constraints for table `detail_penilaian`
---
-ALTER TABLE `detail_penilaian`
-  ADD CONSTRAINT `detail_penilaian_ibfk_1` FOREIGN KEY (`penilaian_id`) REFERENCES `penilaian` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `detail_penilaian_ibfk_2` FOREIGN KEY (`item_id`) REFERENCES `item` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `guru`
@@ -484,22 +393,30 @@ ALTER TABLE `guru`
   ADD CONSTRAINT `fk_guru_tipe` FOREIGN KEY (`tipe`) REFERENCES `tipe_guru` (`kode`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
--- Constraints for table `item`
+-- Constraints for table `hasil`
 --
-ALTER TABLE `item`
-  ADD CONSTRAINT `item_ibfk_1` FOREIGN KEY (`komponen_id`) REFERENCES `komponen_penilaian` (`id`) ON DELETE CASCADE;
+ALTER TABLE `hasil`
+  ADD CONSTRAINT `hasil_ibfk_1` FOREIGN KEY (`id_penilaian`) REFERENCES `penilaian` (`id_penilaian`) ON DELETE CASCADE,
+  ADD CONSTRAINT `hasil_ibfk_2` FOREIGN KEY (`id_item`) REFERENCES `item` (`id_item`) ON DELETE CASCADE;
 
 --
--- Constraints for table `komponen_penilaian`
+-- Constraints for table `isi`
 --
-ALTER TABLE `komponen_penilaian`
-  ADD CONSTRAINT `fk_komponen_tipe` FOREIGN KEY (`tipe_guru`) REFERENCES `tipe_guru` (`kode`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `isi`
+  ADD CONSTRAINT `fk_isi_item` FOREIGN KEY (`id_item`) REFERENCES `item` (`id_item`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_isi_komponen` FOREIGN KEY (`id_komponen`) REFERENCES `komponen` (`id_komponen`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `komponen`
+--
+ALTER TABLE `komponen`
+  ADD CONSTRAINT `fk_komponen_type_guru` FOREIGN KEY (`type_guru`) REFERENCES `tipe_guru` (`kode`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Constraints for table `penilaian`
 --
 ALTER TABLE `penilaian`
-  ADD CONSTRAINT `penilaian_ibfk_1` FOREIGN KEY (`guru_id`) REFERENCES `guru` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `penilaian_ibfk_1` FOREIGN KEY (`id_guru`) REFERENCES `guru` (`id_guru`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
