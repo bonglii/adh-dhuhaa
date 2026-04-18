@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Apr 10, 2026 at 04:49 AM
+-- Generation Time: Apr 17, 2026 at 09:37 AM
 -- Server version: 8.0.30
 -- PHP Version: 8.1.10
 
@@ -137,7 +137,6 @@ CREATE TABLE `guru_history` (
 --
 
 CREATE TABLE `hasil` (
-  `id_hasil` int NOT NULL,
   `id_penilaian` int NOT NULL,
   `id_item` int NOT NULL COMMENT 'FK ke item.id_item',
   `nilai` tinyint(1) DEFAULT '1'
@@ -150,13 +149,101 @@ CREATE TABLE `hasil` (
 --
 
 CREATE TABLE `isi` (
-  `id_isi` int NOT NULL,
   `id_komponen` int NOT NULL COMMENT 'FK ke komponen.id_komponen',
   `nama_indikator` varchar(100) NOT NULL COMMENT 'Nama indikator dalam custom penilaian',
   `urutan_isi` int DEFAULT '0' COMMENT 'Urutan indikator dalam komponen',
   `id_item` int NOT NULL COMMENT 'FK ke item.id_item',
   `nomor_item` varchar(10) NOT NULL COMMENT 'cth: 1.1, 1.2, 2.1'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Item pilihan per custom penilaian';
+
+--
+-- Dumping data for table `isi`
+--
+
+INSERT INTO `isi` (`id_komponen`, `nama_indikator`, `urutan_isi`, `id_item`, `nomor_item`) VALUES
+(18, 'Disiplin', 1, 44, '1.1'),
+(18, 'Disiplin', 1, 45, '1.2'),
+(18, 'Disiplin', 1, 46, '1.3'),
+(18, 'Disiplin', 1, 47, '1.4'),
+(18, 'Disiplin', 1, 48, '1.5'),
+(18, 'Disiplin', 1, 49, '1.6'),
+(18, 'Disiplin', 1, 50, '1.7'),
+(18, 'Disiplin', 1, 51, '1.8'),
+(18, 'Kerjasama', 3, 60, '3.1'),
+(18, 'Kerjasama', 3, 61, '3.2'),
+(18, 'Kerjasama', 3, 62, '3.3'),
+(18, 'Kerjasama', 3, 63, '3.4'),
+(18, 'Kerjasama', 3, 64, '3.5'),
+(18, 'Kerjasama', 3, 66, '3.6'),
+(18, 'Pelaksanaan Pembelajaran', 2, 52, '2.1'),
+(18, 'Pelaksanaan Pembelajaran', 2, 53, '2.2'),
+(18, 'Pelaksanaan Pembelajaran', 2, 54, '2.3'),
+(18, 'Pelaksanaan Pembelajaran', 2, 55, '2.4'),
+(18, 'Pelaksanaan Pembelajaran', 2, 56, '2.5'),
+(18, 'Pelaksanaan Pembelajaran', 2, 57, '2.6'),
+(18, 'Pelaksanaan Pembelajaran', 2, 58, '2.7'),
+(18, 'Pelaksanaan Pembelajaran', 2, 59, '2.8'),
+(19, 'Disiplin', 1, 44, '1.1'),
+(19, 'Disiplin', 1, 45, '1.2'),
+(19, 'Disiplin', 1, 46, '1.3'),
+(19, 'Disiplin', 1, 47, '1.4'),
+(19, 'Disiplin', 1, 48, '1.5'),
+(19, 'Disiplin', 1, 49, '1.6'),
+(19, 'Disiplin', 1, 50, '1.7'),
+(19, 'Disiplin', 1, 51, '1.8'),
+(19, 'Kerjasama', 3, 60, '3.1'),
+(19, 'Kerjasama', 3, 61, '3.2'),
+(19, 'Kerjasama', 3, 62, '3.3'),
+(19, 'Kerjasama', 3, 63, '3.4'),
+(19, 'Kerjasama', 3, 64, '3.5'),
+(19, 'Kerjasama', 3, 65, '3.6'),
+(19, 'Pelaksanaan Pembelajaran', 2, 54, '2.1'),
+(19, 'Pelaksanaan Pembelajaran', 2, 68, '2.2'),
+(19, 'Pelaksanaan Pembelajaran', 2, 69, '2.3'),
+(19, 'Pelaksanaan Pembelajaran', 2, 70, '2.4'),
+(19, 'Pelaksanaan Pembelajaran', 2, 71, '2.5'),
+(19, 'Pelaksanaan Pembelajaran', 2, 72, '2.6'),
+(19, 'Pelaksanaan Pembelajaran', 2, 73, '2.7'),
+(19, 'Pelaksanaan Pembelajaran', 2, 74, '2.8'),
+(20, 'Disiplin', 1, 44, '1.1'),
+(20, 'Disiplin', 1, 45, '1.2'),
+(20, 'Disiplin', 1, 46, '1.3'),
+(20, 'Disiplin', 1, 47, '1.4'),
+(20, 'Disiplin', 1, 48, '1.5'),
+(20, 'Disiplin', 1, 49, '1.6'),
+(20, 'Disiplin', 1, 50, '1.7'),
+(20, 'Disiplin', 1, 51, '1.8'),
+(20, 'Kerjasama', 3, 60, '3.1'),
+(20, 'Kerjasama', 3, 61, '3.2'),
+(20, 'Kerjasama', 3, 62, '3.3'),
+(20, 'Kerjasama', 3, 63, '3.4'),
+(20, 'Kerjasama', 3, 64, '3.5'),
+(20, 'Kerjasama', 3, 65, '3.6'),
+(20, 'Pelaksanaan Pembelajaran', 2, 54, '2.1'),
+(20, 'Pelaksanaan Pembelajaran', 2, 68, '2.2'),
+(20, 'Pelaksanaan Pembelajaran', 2, 70, '2.3'),
+(20, 'Pelaksanaan Pembelajaran', 2, 71, '2.4'),
+(20, 'Pelaksanaan Pembelajaran', 2, 72, '2.5'),
+(20, 'Pelaksanaan Pembelajaran', 2, 73, '2.6'),
+(20, 'Pelaksanaan Pembelajaran', 2, 74, '2.7'),
+(21, 'Disiplin', 1, 44, '1.1'),
+(21, 'Disiplin', 1, 45, '1.2'),
+(21, 'Disiplin', 1, 46, '1.3'),
+(21, 'Disiplin', 1, 47, '1.4'),
+(21, 'Disiplin', 1, 48, '1.5'),
+(21, 'Disiplin', 1, 49, '1.6'),
+(21, 'Disiplin', 1, 50, '1.7'),
+(21, 'Disiplin', 1, 51, '1.8'),
+(21, 'Kerjasama', 3, 60, '3.1'),
+(21, 'Kerjasama', 3, 61, '3.2'),
+(21, 'Kerjasama', 3, 62, '3.3'),
+(21, 'Kerjasama', 3, 63, '3.4'),
+(21, 'Kerjasama', 3, 64, '3.5'),
+(21, 'Kerjasama', 3, 65, '3.6'),
+(21, 'Pelaksanaan Pembelajaran', 2, 54, '2.1'),
+(21, 'Pelaksanaan Pembelajaran', 2, 68, '2.2'),
+(21, 'Pelaksanaan Pembelajaran', 2, 70, '2.3'),
+(21, 'Pelaksanaan Pembelajaran', 2, 74, '2.4');
 
 -- --------------------------------------------------------
 
@@ -170,6 +257,42 @@ CREATE TABLE `item` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Bank soal item penilaian global (rename dari item_master)';
 
+--
+-- Dumping data for table `item`
+--
+
+INSERT INTO `item` (`id_item`, `nama_item`, `created_at`) VALUES
+(44, 'Persentasi Kehadiran', '2026-04-10 07:26:42'),
+(45, 'Datang di sekolah tepat waktu dan kepulangan tepat waktu', '2026-04-10 07:36:08'),
+(46, 'Berpakaian seragam sesuai ketentuan', '2026-04-10 07:36:31'),
+(47, 'Ikut serta dalam upacara dan senam di sekolah', '2026-04-10 07:36:54'),
+(48, 'Ikut serta dalam rapat-rapat di sekolah', '2026-04-10 07:37:55'),
+(49, 'Ikut serta dalam Inspirasi Pagi', '2026-04-10 07:38:21'),
+(50, 'Kehadiran pembinaan sabtu', '2026-04-10 07:38:37'),
+(51, 'Adab minta izin dan menulis dibuku izin', '2026-04-10 07:39:45'),
+(52, 'Menuliskan hasil evaluasi tahsin, tahfizh dan adab', '2026-04-10 07:40:22'),
+(53, 'Menyampaikan materi pembelajaran bahasa arab', '2026-04-10 07:40:52'),
+(54, 'Metode pengajaran', '2026-04-10 07:41:08'),
+(55, 'Membuat halaqoh yang tertib', '2026-04-10 07:41:26'),
+(56, 'Mengajar sesuai SOP', '2026-04-10 07:41:41'),
+(57, 'Kedisiplinan masuk dan keluar halaqoh', '2026-04-10 07:41:58'),
+(58, 'Menggunakan bahasa arab pembukaan dan penutupan halaqoh', '2026-04-10 07:42:23'),
+(59, 'Menyampaikan capaian perkembangan siswa kepada orang tua', '2026-04-10 07:42:44'),
+(60, 'Melaksanakan tugas yang diberikan oleh Kepala Sekolah', '2026-04-10 07:43:06'),
+(61, 'Membantu teman dalam ikut memecahkan masalah KBM', '2026-04-10 07:43:41'),
+(62, 'Menciptakan hubungan yang harmonis dengan orangtua/wali murid', '2026-04-10 07:44:15'),
+(63, 'Menciptakan hubungan yang harmonis dengan guru dan GTK', '2026-04-10 07:44:43'),
+(64, 'Amanah dan Aktif berpartisipasi dalam kepanitiaan', '2026-04-10 07:45:16'),
+(65, 'Piket kedatangan dan kepulangan', '2026-04-10 07:45:36'),
+(66, 'Kerjasama dengan guru kelas', '2026-04-10 07:45:53'),
+(68, 'Membuat Administrasi Pembelajaran (Promes, Modul Ajar, Jurnal Harian, Dll)', '2026-04-10 08:30:58'),
+(69, 'Melaksanakan Pembelajaran P5 dan Life Skill', '2026-04-10 08:31:24'),
+(70, 'Membuat Program Perbaikan', '2026-04-10 08:31:50'),
+(71, 'Membimbing Siswa Wudhu', '2026-04-10 08:32:04'),
+(72, 'Kebersihan dan kerapian kelas', '2026-04-10 08:32:21'),
+(73, 'Membimbing Siswa Sholat, Dzikir, dan Doa', '2026-04-10 08:32:52'),
+(74, 'Memuat Kurikulum Keislaman', '2026-04-10 08:33:05');
+
 -- --------------------------------------------------------
 
 --
@@ -181,6 +304,16 @@ CREATE TABLE `komponen` (
   `ta_komponen` varchar(255) NOT NULL COMMENT 'Nama/deskripsi komponen',
   `type_guru` varchar(20) NOT NULL COMMENT 'FK ke tipe_guru.kode'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tabel komponen penilaian tambahan';
+
+--
+-- Dumping data for table `komponen`
+--
+
+INSERT INTO `komponen` (`id_komponen`, `ta_komponen`, `type_guru`) VALUES
+(18, '2025/2026', 'guru_quran'),
+(19, '2025/2026', 'guru_kelas'),
+(20, '2025/2026', 'mapel'),
+(21, '2025/2026', 'mapel2');
 
 -- --------------------------------------------------------
 
@@ -200,14 +333,6 @@ CREATE TABLE `penilaian` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
---
--- Dumping data for table `penilaian`
---
-
-INSERT INTO `penilaian` (`id_penilaian`, `id_guru`, `id_komponen`, `periode`, `tanggal_penilaian`, `penilai`, `jabatan_penilai`, `catatan`, `created_at`, `updated_at`) VALUES
-(16, 8, 6, '2024/2025', '2026-04-10', 'Hasyim Ashari, S.T', 'Kepala Sekolah', '', '2026-04-10 01:06:53', '2026-04-10 01:06:53'),
-(17, 8, 7, '2025/2026', '2026-04-10', 'Hasyim Ashari, S.T', 'Kepala Sekolah', '', '2026-04-10 01:08:42', '2026-04-10 01:08:42');
 
 -- --------------------------------------------------------
 
@@ -229,8 +354,9 @@ CREATE TABLE `tipe_guru` (
 INSERT INTO `tipe_guru` (`id_tipe_guru`, `kode`, `label`, `urutan`) VALUES
 (1, 'guru_quran', 'Guru Qur\'an', 1),
 (2, 'guru_kelas', 'Guru Kelas', 2),
-(3, 'mapel', 'Guru Mapel', 3),
-(4, 'gtk', 'GTK/Staff', 4);
+(3, 'mapel', 'Guru Mapel 1', 3),
+(4, 'gtk', 'GTK/Staff', 4),
+(8, 'mapel2', 'Guru Mapel 2', 5);
 
 -- --------------------------------------------------------
 
@@ -276,7 +402,7 @@ ALTER TABLE `guru_history`
 -- Indexes for table `hasil`
 --
 ALTER TABLE `hasil`
-  ADD PRIMARY KEY (`id_hasil`),
+  ADD PRIMARY KEY (`id_penilaian`,`id_item`),
   ADD KEY `id_penilaian` (`id_penilaian`),
   ADD KEY `id_item` (`id_item`);
 
@@ -284,7 +410,7 @@ ALTER TABLE `hasil`
 -- Indexes for table `isi`
 --
 ALTER TABLE `isi`
-  ADD PRIMARY KEY (`id_isi`),
+  ADD PRIMARY KEY (`id_komponen`,`nama_indikator`,`id_item`),
   ADD KEY `fk_isi_komponen` (`id_komponen`),
   ADD KEY `fk_isi_item` (`id_item`);
 
@@ -332,49 +458,37 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `guru`
 --
 ALTER TABLE `guru`
-  MODIFY `id_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=65;
+  MODIFY `id_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=67;
 
 --
 -- AUTO_INCREMENT for table `guru_history`
 --
 ALTER TABLE `guru_history`
-  MODIFY `id_guru_history` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
-
---
--- AUTO_INCREMENT for table `hasil`
---
-ALTER TABLE `hasil`
-  MODIFY `id_hasil` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=272;
-
---
--- AUTO_INCREMENT for table `isi`
---
-ALTER TABLE `isi`
-  MODIFY `id_isi` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=28;
+  MODIFY `id_guru_history` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `item`
 --
 ALTER TABLE `item`
-  MODIFY `id_item` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=44;
+  MODIFY `id_item` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=75;
 
 --
 -- AUTO_INCREMENT for table `komponen`
 --
 ALTER TABLE `komponen`
-  MODIFY `id_komponen` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id_komponen` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `penilaian`
 --
 ALTER TABLE `penilaian`
-  MODIFY `id_penilaian` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+  MODIFY `id_penilaian` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=61;
 
 --
 -- AUTO_INCREMENT for table `tipe_guru`
 --
 ALTER TABLE `tipe_guru`
-  MODIFY `id_tipe_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id_tipe_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `users`

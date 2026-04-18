@@ -1,80 +1,105 @@
 <?php
 /**
- * ranking.php — Halaman Ranking Guru Berdasarkan Nilai Kinerja
+ * ranking.php — Halaman Ranking Guru per Tahun Ajaran
  *
- * Menampilkan peringkat semua guru yang sudah memiliki penilaian,
- * diurutkan dari nilai tertinggi ke terendah.
- * Mendukung filter per tipe guru dan tampilkan predikat otomatis.
+ * - Tab per Tahun Ajaran (TA terbaru aktif default)
+ * - Ranking = rata-rata SEMUA penilaian guru di TA tersebut
+ * - Filter tipe guru & predikat, podium Top 3 ikut filter
  */
 
-// ─── Set judul halaman & load header (sidebar + navbar) ─────────────────────
 $pageTitle = 'Ranking Guru';
 require_once 'includes/config.php';
 requireLogin();
 
-// ─── Query semua guru yang sudah punya penilaian, nilai terbaru per guru ─────
-$rankingAll = $pdo->query("
-    SELECT
-        g.id_guru, g.nama, g.jabatan, g.tipe, g.nrg,
-        COUNT(p.id_penilaian) as jml_penilaian,
-        p_last.tanggal_penilaian as last_penilaian,
-        p_last.id_penilaian as last_id,
-        (
-            SELECT ROUND(AVG(ind_pct), 1)
-            FROM (
-                SELECT
-                    SUM(dp2.nilai) / NULLIF(COUNT(dp2.id_hasil) * 5, 0) * 100 AS ind_pct
-                FROM hasil dp2
-                JOIN isi s ON dp2.id_item = s.id_item
-                          AND s.id_komponen = p_last.id_komponen
-                WHERE dp2.id_penilaian = p_last.id_penilaian
-                GROUP BY s.nama_indikator
-            ) ind_scores
-        ) as nilai_akhir
-    FROM guru g
-    LEFT JOIN penilaian p ON p.id_guru = g.id_guru
-    LEFT JOIN penilaian p_last ON p_last.id_penilaian = (
-        SELECT id_penilaian FROM penilaian
-        WHERE id_guru = g.id_guru
-        ORDER BY tanggal_penilaian DESC, id_penilaian DESC
-        LIMIT 1
-    )
-    GROUP BY g.id_guru, p_last.id_penilaian, p_last.tanggal_penilaian
-    HAVING nilai_akhir IS NOT NULL
-    ORDER BY nilai_akhir DESC
-")->fetchAll();
+// ─── 1. Ambil semua TA yang pernah dipakai ──────────────────────────────────
+$taList = $pdo->query("
+    SELECT DISTINCT periode
+    FROM penilaian
+    WHERE periode IS NOT NULL AND periode != ''
+    ORDER BY periode DESC
+")->fetchAll(PDO::FETCH_COLUMN);
 
-// Beri nomor ranking
-$ranked = [];
-$rank = 1;
-foreach ($rankingAll as $r) {
-    $r['rank'] = $rank++;
-    $r['nilai_akhir'] = round($r['nilai_akhir'], 1);
-    $ranked[] = $r;
+// TA aktif (dari query string atau default ke yang terbaru)
+$activeTA = $_GET['ta'] ?? ($taList[0] ?? null);
+if ($activeTA && !in_array($activeTA, $taList, true)) {
+    $activeTA = $taList[0] ?? null;
 }
 
-// Statistik ringkas
-$total   = count($ranked);
-$belumDinilai = $pdo->query("
-    SELECT COUNT(*) FROM guru g
-    WHERE NOT EXISTS (SELECT 1 FROM penilaian WHERE id_guru = g.id_guru)
-")->fetchColumn();
+// ─── 2. Query ranking untuk TA aktif ────────────────────────────────────────
+// Logika: per guru, hitung rata-rata nilai dari SEMUA penilaiannya di TA tsb.
+// Nilai per 1 penilaian = rata-rata persentase per indikator.
+$ranked = [];
+if ($activeTA) {
+    $stmt = $pdo->prepare("
+        SELECT
+            g.id_guru,
+            g.nama,
+            g.jabatan,
+            g.tipe,
+            g.nrg,
+            COUNT(DISTINCT p.id_penilaian) AS jml_penilaian,
+            MAX(p.tanggal_penilaian)       AS last_penilaian,
+            (
+                SELECT p2.id_penilaian
+                FROM penilaian p2
+                WHERE p2.id_guru = g.id_guru
+                  AND p2.periode = :ta2
+                ORDER BY p2.tanggal_penilaian DESC, p2.id_penilaian DESC
+                LIMIT 1
+            ) AS last_id,
+            ROUND(AVG(nilai_per_penilaian.pct), 1) AS nilai_akhir
+        FROM guru g
+        JOIN penilaian p
+          ON p.id_guru = g.id_guru
+         AND p.periode = :ta
+        JOIN (
+            /* Per penilaian: rata-rata persentase antar indikator */
+            SELECT
+                ind.id_penilaian,
+                AVG(ind.ind_pct) AS pct
+            FROM (
+                SELECT
+                    dp.id_penilaian,
+                    s.nama_indikator,
+                    SUM(dp.nilai) / NULLIF(COUNT(*) * 5, 0) * 100 AS ind_pct
+                FROM hasil dp
+                JOIN isi s
+                  ON dp.id_item = s.id_item
+                 AND s.id_komponen = (
+                    SELECT id_komponen FROM penilaian WHERE id_penilaian = dp.id_penilaian
+                 )
+                GROUP BY dp.id_penilaian, s.nama_indikator
+            ) ind
+            GROUP BY ind.id_penilaian
+        ) nilai_per_penilaian
+          ON nilai_per_penilaian.id_penilaian = p.id_penilaian
+        GROUP BY g.id_guru, g.nama, g.jabatan, g.tipe, g.nrg
+        HAVING nilai_akhir IS NOT NULL
+        ORDER BY nilai_akhir DESC, g.nama ASC
+    ");
+    $stmt->execute([':ta' => $activeTA, ':ta2' => $activeTA]);
+    $rankingAll = $stmt->fetchAll();
 
-$avgAll  = $total > 0 ? round(array_sum(array_column($ranked, 'nilai_akhir')) / $total, 1) : 0;
-$tertinggi = $total > 0 ? $ranked[0] : null;
-$terendah  = $total > 0 ? $ranked[$total - 1] : null;
+    $rank = 1;
+    foreach ($rankingAll as $r) {
+        $r['rank']        = $rank++;
+        $r['nilai_akhir'] = round($r['nilai_akhir'], 1);
+        $ranked[]         = $r;
+    }
+}
 
-// Ambil label tipe guru dari database (dinamis)
+// ─── 3. Label tipe guru (dinamis) ───────────────────────────────────────────
 $tipeLabel = getTipeGuru($pdo);
 
+// ─── 4. Helper ──────────────────────────────────────────────────────────────
 function predikat($n)
 {
-    if ($n === null) return ['Belum Dinilai', '#6b7280', '⬜'];
-    if ($n >= 90)    return ['Sangat Baik Sekali', '#7c3aed', '🟣'];
-    if ($n >= 75)    return ['Sangat Baik', '#16a34a', '🟢'];
-    if ($n >= 60)    return ['Baik', '#2563eb', '🔵'];
-    if ($n >= 40)    return ['Cukup', '#d97706', '🟡'];
-    return ['Kurang', '#dc2626', '🔴'];
+    if ($n === null) return ['Belum Dinilai', '#6b7280'];
+    if ($n >= 90)    return ['Sangat Baik Sekali', '#7c3aed'];
+    if ($n >= 75)    return ['Sangat Baik',        '#16a34a'];
+    if ($n >= 60)    return ['Baik',               '#2563eb'];
+    if ($n >= 40)    return ['Cukup',              '#d97706'];
+    return                  ['Kurang',             '#dc2626'];
 }
 
 function medalEmoji($rank)
@@ -86,54 +111,339 @@ function medalEmoji($rank)
 }
 ?>
 
-<!-- Filter + Tabel Ranking -->
 <?php require_once 'includes/header.php'; ?>
 
-<!-- Kartu Statistik -->
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px;">
-    <div style="background:#fff;border-radius:14px;padding:18px 20px;border:1px solid #e5e7eb;display:flex;align-items:center;gap:14px;">
-        <div style="width:44px;height:44px;border-radius:12px;background:#e8f5ee;display:flex;align-items:center;justify-content:center;font-size:20px;">🏆</div>
-        <div>
-            <div style="font-size:22px;font-weight:700;color:#1a4731;"><?= $total ?></div>
-            <div style="font-size:12px;color:#6b7280;">Guru Terperingkat</div>
-        </div>
-    </div>
-    <div style="background:#fff;border-radius:14px;padding:18px 20px;border:1px solid #e5e7eb;display:flex;align-items:center;gap:14px;">
-        <div style="width:44px;height:44px;border-radius:12px;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:20px;">📊</div>
-        <div>
-            <div style="font-size:22px;font-weight:700;color:#1e40af;"><?= $avgAll ?>%</div>
-            <div style="font-size:12px;color:#6b7280;">Rata-rata Semua</div>
-        </div>
-    </div>
-    <?php if ($tertinggi): [$pr, $col] = predikat($tertinggi['nilai_akhir']); ?>
-        <div style="background:#fff;border-radius:14px;padding:18px 20px;border:1px solid #e5e7eb;display:flex;align-items:center;gap:14px;">
-            <div style="width:44px;height:44px;border-radius:12px;background:#fef9ec;display:flex;align-items:center;justify-content:center;font-size:20px;">🥇</div>
-            <div style="min-width:0;">
-                <div style="font-size:14px;font-weight:700;color:#78350f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;"><?= htmlspecialchars($tertinggi['nama']) ?></div>
-                <div style="font-size:12px;color:#6b7280;"><?= $tertinggi['nilai_akhir'] ?>% — Tertinggi</div>
-            </div>
-        </div>
-    <?php endif; ?>
-    <div style="background:#fff;border-radius:14px;padding:18px 20px;border:1px solid #e5e7eb;display:flex;align-items:center;gap:14px;">
-        <div style="width:44px;height:44px;border-radius:12px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:20px;">⏳</div>
-        <div>
-            <div style="font-size:22px;font-weight:700;color:#d97706;"><?= $belumDinilai ?></div>
-            <div style="font-size:12px;color:#6b7280;">Belum Dinilai</div>
-        </div>
-    </div>
-</div>
+<style>
+    /* ═══════════════════════════════════════════════════════════════
+       RANKING PAGE — scoped styles
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* Tab Tahun Ajaran ─────────────────────────────────────────── */
+    .ta-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e5e7eb;
+        overflow-x: auto;
+    }
+
+    .ta-tab {
+        padding: 10px 18px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #6b7280;
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all .15s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ta-tab:hover {
+        color: var(--hijau);
+        background: #f8fafc;
+    }
+
+    .ta-tab.active {
+        color: var(--hijau);
+        border-bottom-color: var(--hijau);
+        background: var(--hijau-pale);
+    }
+
+    .ta-tab .ta-count {
+        background: #e5e7eb;
+        color: #374151;
+        font-size: 11px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-weight: 700;
+    }
+
+    .ta-tab.active .ta-count {
+        background: var(--hijau);
+        color: #fff;
+    }
+
+    /* Podium ─────────────────────────────────────────────────────── */
+    .podium-wrap {
+        background: linear-gradient(135deg, #fafbfc 0%, #f0fdf4 100%);
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 24px 20px 28px;
+        margin-bottom: 22px;
+    }
+
+    .podium-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #374151;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .podium-row {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        gap: 18px;
+        flex-wrap: wrap;
+    }
+
+    .podium-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 0 1 180px;
+        min-width: 150px;
+    }
+
+    .podium-medal {
+        font-size: 30px;
+        margin-bottom: 6px;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,.1));
+    }
+
+    .podium-card {
+        background: #fff;
+        border: 2px solid;
+        border-radius: 12px;
+        padding: 14px 16px 12px;
+        text-align: center;
+        width: 100%;
+        box-shadow: 0 2px 10px rgba(0,0,0,.04);
+    }
+
+    .podium-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        margin-bottom: 4px;
+        word-break: break-word;
+    }
+
+    .podium-jabatan {
+        font-size: 11px;
+        color: #6b7280;
+        margin-bottom: 8px;
+        min-height: 14px;
+    }
+
+    .podium-nilai {
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    .podium-pred {
+        font-size: 11px;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+
+    .podium-rank {
+        margin-top: 8px;
+        color: #fff;
+        font-weight: 800;
+        font-size: 13px;
+        padding: 6px 20px;
+        border-radius: 8px;
+        letter-spacing: .5px;
+    }
+
+    .podium-gold   { border-color: #f5c842; }
+    .podium-silver { border-color: #c0c0c0; }
+    .podium-bronze { border-color: #cd7f32; }
+    .badge-gold    { background: #f5c842; }
+    .badge-silver  { background: #c0c0c0; }
+    .badge-bronze  { background: #cd7f32; }
+
+    /* Tabel ranking ──────────────────────────────────────────────── */
+    .rank-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 13px;
+    }
+
+    .rank-table thead th {
+        background: #f8fafc;
+        color: #374151;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: .3px;
+        padding: 12px 14px;
+        border-bottom: 1px solid #e5e7eb;
+        white-space: nowrap;
+    }
+
+    .rank-table tbody td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
+
+    .rank-table tbody tr {
+        transition: background .12s ease;
+    }
+
+    .rank-table tbody tr:hover {
+        background: #fafbfc;
+    }
+
+    .rank-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .rank-num {
+        font-weight: 700;
+        color: #9ca3af;
+        font-size: 14px;
+    }
+
+    .rank-medal {
+        font-size: 20px;
+        line-height: 1;
+    }
+
+    .guru-nama {
+        font-weight: 600;
+        color: #111827;
+        line-height: 1.3;
+    }
+
+    .guru-jabatan {
+        font-size: 11.5px;
+        color: #6b7280;
+        margin-top: 2px;
+    }
+
+    .nilai-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 220px;
+    }
+
+    .nilai-bar {
+        flex: 1;
+        height: 8px;
+        background: #eef2f6;
+        border-radius: 999px;
+        overflow: hidden;
+        min-width: 80px;
+    }
+
+    .nilai-bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width .6s ease;
+    }
+
+    .nilai-angka {
+        font-weight: 700;
+        font-size: 14px;
+        min-width: 48px;
+        text-align: right;
+    }
+
+    .nilai-pred {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    .jml-badge {
+        display: inline-block;
+        background: #f1f5f9;
+        color: #475569;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+    }
+
+    .empty-state {
+        text-align: center;
+        color: #9ca3af;
+        padding: 48px 20px;
+        font-size: 13px;
+    }
+
+    .empty-big {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6b7280;
+    }
+
+    .empty-big .emoji    { font-size: 48px; margin-bottom: 12px; }
+    .empty-big .title    { font-size: 16px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    .empty-big .subtitle { font-size: 13px; }
+
+    /* Filter toolbar */
+    .rank-toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .rank-toolbar .form-control-custom {
+        padding: 7px 12px;
+        font-size: 13px;
+    }
+
+    /* Info bar TA aktif */
+    .ta-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 14px;
+        background: #f8fafc;
+        border-radius: 10px;
+        margin-bottom: 14px;
+        font-size: 12.5px;
+        color: #6b7280;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .ta-info strong { color: #111827; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+        .podium-item { flex: 1 1 100%; }
+        .rank-table { font-size: 12px; }
+        .rank-table thead th,
+        .rank-table tbody td { padding: 10px 8px; }
+        .nilai-wrap { min-width: 140px; }
+        .ta-tab { padding: 8px 12px; font-size: 12px; }
+    }
+</style>
 
 <div class="data-table-card">
     <div class="card-header-custom" style="flex-wrap:wrap;gap:10px;">
         <div class="card-title-custom">🏆 Ranking Kinerja Guru</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <select id="filterTipe" class="form-control-custom" style="padding:7px 12px;font-size:13px;" onchange="applyFilter()">
+        <div class="rank-toolbar">
+            <select id="filterTipe" class="form-control-custom" onchange="applyFilter()">
                 <option value="">Semua Tipe</option>
                 <?php foreach ($tipeLabel as $kode => $label): ?>
                     <option value="<?= htmlspecialchars($kode) ?>"><?= htmlspecialchars($label) ?></option>
                 <?php endforeach; ?>
             </select>
-            <select id="filterPredikat" class="form-control-custom" style="padding:7px 12px;font-size:13px;" onchange="applyFilter()">
+            <select id="filterPredikat" class="form-control-custom" onchange="applyFilter()">
                 <option value="">Semua Predikat</option>
                 <option value="90">Sangat Baik Sekali (≥90%)</option>
                 <option value="75">Sangat Baik (≥75%)</option>
@@ -144,140 +454,203 @@ function medalEmoji($rank)
         </div>
     </div>
 
-    <!-- Top 3 Podium -->
-    <?php if (count($ranked) >= 1): ?>
-        <div id="podiumSection" style="background:linear-gradient(135deg,#f9fafb,#f0fdf4);border-radius:14px;padding:20px 24px;margin-bottom:20px;border:1px solid #e5e7eb;">
-            <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:16px;text-align:center;text-transform:uppercase;letter-spacing:0.5px;">🏆 Podium Teratas</div>
-            <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px;flex-wrap:wrap;">
-                <?php
-                $podiumOrder = [1, 0, 2]; // tampilkan #2, #1, #3
-                $podiumHeights = [1 => 110, 0 => 130, 2 => 90];
-                $podiumColors  = [1 => '#c0c0c0', 0 => '#f5c842', 2 => '#cd7f32'];
-                $podiumBg      = [1 => '#f8fafc', 0 => '#fef9ec', 2 => '#fdf6ee'];
-                foreach ($podiumOrder as $pIdx):
-                    if (!isset($ranked[$pIdx])) continue;
-                    $pr = $ranked[$pIdx];
-                    [$pred, $col] = predikat($pr['nilai_akhir']);
-                    $medal = ['🥇', '🥈', '🥉'][$pIdx];
-                    $ht = $podiumHeights[$pIdx];
-                    $pc = $podiumColors[$pIdx];
-                    $pb = $podiumBg[$pIdx];
-                ?>
-                    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto;">
-                        <div style="font-size:24px;"><?= $medal ?></div>
-                        <div style="background:<?= $pb ?>;border:2px solid <?= $pc ?>;border-radius:12px;padding:10px 14px;text-align:center;max-width:140px;">
-                            <div style="font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;"><?= htmlspecialchars($pr['nama']) ?></div>
-                            <div style="font-size:11px;color:#6b7280;margin-top:2px;"><?= htmlspecialchars($pr['jabatan'] ?? '') ?></div>
-                            <div style="font-size:20px;font-weight:800;color:<?= $col ?>;margin-top:4px;"><?= $pr['nilai_akhir'] ?>%</div>
-                            <div style="font-size:11px;color:<?= $col ?>;font-weight:600;"><?= $pred ?></div>
-                        </div>
-                        <div style="background:<?= $pc ?>;color:#fff;font-weight:800;font-size:13px;padding:6px 18px;border-radius:0 0 8px 8px;min-height:<?= $ht / 3 ?>px;display:flex;align-items:center;justify-content:center;">
-                            #<?= $pIdx + 1 ?>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            </div>
+    <?php if (empty($taList)): ?>
+        <!-- Belum ada TA sama sekali -->
+        <div class="empty-big">
+            <div class="emoji">📋</div>
+            <div class="title">Belum ada data penilaian</div>
+            <div class="subtitle">Mulai tambah penilaian untuk melihat ranking guru.</div>
+            <a href="penilaian.php?action=add" class="btn-primary-custom" style="margin-top:16px;display:inline-block;">+ Tambah Penilaian</a>
         </div>
-    <?php endif; ?>
+    <?php else: ?>
 
-    <!-- Tabel Lengkap -->
-    <div style="overflow-x:auto;">
-        <table class="table table-hover" id="rankTable" style="font-size:13px;">
-            <thead style="background:#f8fafc;">
-                <tr>
-                    <th style="width:60px;">Rank</th>
-                    <th>Nama Guru</th>
-                    <th>Jabatan</th>
-                    <th>Tipe</th>
-                    <th>Status</th>
-                    <th style="min-width:180px;">Nilai Akhir</th>
-                    <th>Predikat</th>
-                    <th>Tgl Penilaian</th>
-                    <th>Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($ranked as $r):
-                    [$pred, $col, $dot] = predikat($r['nilai_akhir']);
-                    $medal = medalEmoji($r['rank']);
-                    $badgeMap = ['guru_quran'=>'quran','guru_kelas'=>'kelas','mapel'=>'mapel','gtk'=>'gtk'];
-                    $tipeKey  = $badgeMap[$r['tipe']] ?? 'gtk';
-                ?>
-                    <tr data-tipe="<?= $r['tipe'] ?>" data-nilai="<?= $r['nilai_akhir'] ?>" data-nama="<?= htmlspecialchars($r['nama'], ENT_QUOTES) ?>" data-jabatan="<?= htmlspecialchars($r['jabatan'] ?? '', ENT_QUOTES) ?>" data-col="<?= $col ?>" data-pred="<?= $pred ?>">
-                        <td>
-                            <div style="display:flex;align-items:center;gap:6px;">
-                                <?php if ($medal): ?>
-                                    <span style="font-size:18px;"><?= $medal ?></span>
-                                <?php else: ?>
-                                    <span style="font-weight:700;color:#9ca3af;font-size:14px;">#<?= $r['rank'] ?></span>
-                                <?php endif; ?>
-                            </div>
-                        </td>
-                        <td><strong><?= htmlspecialchars($r['nama']) ?></strong></td>
-                        <td><small style="color:#6b7280;"><?= htmlspecialchars($r['jabatan'] ?? '') ?></small></td>
-                        <td>
-                            <span class="badge-tipe badge-<?= $tipeKey ?>">
-                                <?= $tipeLabel[$r['tipe']] ?? $r['tipe'] ?>
-                            </span>
-                        </td>
-                        <td>
-                            <span style="font-size:11.5px;font-weight:600;color:#16a34a;">✓ Sudah Dinilai</span>
-                        </td>
-                        <td>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <div style="flex:1;height:10px;background:#e5e7eb;border-radius:5px;overflow:hidden;min-width:80px;">
-                                    <div style="height:100%;width:<?= min($r['nilai_akhir'], 100) ?>%;background:<?= $col ?>;border-radius:5px;transition:width 0.6s ease;"></div>
-                                </div>
-                                <span style="font-weight:700;color:<?= $col ?>;min-width:42px;text-align:right;"><?= $r['nilai_akhir'] ?>%</span>
-                            </div>
-                        </td>
-                        <td>
-                            <span style="font-size:11.5px;font-weight:600;color:<?= $col ?>;"><?= $dot ?> <?= $pred ?></span>
-                        </td>
-                        <td><small><?= $r['last_penilaian'] ? date('d/m/Y', strtotime($r['last_penilaian'])) : '-' ?></small></td>
-                        <td>
-                            <?php if ($r['last_id']): ?>
-                                <a href="cetak.php?id=<?= $r['last_id'] ?>" class="btn-primary-custom btn-sm-custom btn-view" target="_blank">Cetak</a>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if (empty($ranked)): ?>
-                    <tr>
-                        <td colspan="9" style="text-align:center;color:#9ca3af;padding:40px;">Belum ada data penilaian.</td>
-                    </tr>
+        <!-- ═══ Tab Tahun Ajaran ═══ -->
+        <div class="ta-tabs" role="tablist">
+            <?php
+            $stmtCount = $pdo->prepare("SELECT COUNT(DISTINCT id_guru) FROM penilaian WHERE periode = :ta");
+            foreach ($taList as $ta):
+                $stmtCount->execute([':ta' => $ta]);
+                $jmlGuru = (int) $stmtCount->fetchColumn();
+                $isActive = ($ta === $activeTA);
+            ?>
+                <a href="?ta=<?= urlencode($ta) ?>"
+                   class="ta-tab <?= $isActive ? 'active' : '' ?>"
+                   role="tab">
+                    📅 TA <?= htmlspecialchars($ta) ?>
+                    <span class="ta-count"><?= $jmlGuru ?></span>
+                </a>
+            <?php endforeach; ?>
+        </div>
+
+        <!-- ═══ Info bar TA aktif ═══ -->
+        <?php
+        $totalGuruTA = count($ranked);
+        $avgTA = $totalGuruTA > 0 ? round(array_sum(array_column($ranked, 'nilai_akhir')) / $totalGuruTA, 1) : 0;
+
+        $stmtJml = $pdo->prepare("SELECT COUNT(*) FROM penilaian WHERE periode = :ta");
+        $stmtJml->execute([':ta' => $activeTA]);
+        $totalPenilaianTA = (int) $stmtJml->fetchColumn();
+        ?>
+        <div class="ta-info">
+            <div>
+                Menampilkan <strong><?= $totalGuruTA ?> guru</strong> · <strong><?= $totalPenilaianTA ?> penilaian</strong> di TA <strong><?= htmlspecialchars($activeTA) ?></strong>
+                <?php if ($totalGuruTA > 0): ?>
+                    · Rata-rata: <strong><?= $avgTA ?>%</strong>
                 <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-
-    <?php if ($belumDinilai > 0): ?>
-        <div style="margin-top:16px;padding:12px 16px;background:#fef3c7;border-radius:10px;border-left:4px solid #f59e0b;font-size:13px;color:#92400e;">
-            ⚠️ <strong><?= $belumDinilai ?> guru</strong> belum memiliki data penilaian dan tidak ditampilkan dalam ranking.
-            <a href="penilaian.php?action=add" style="color:#1a4731;font-weight:600;margin-left:6px;">+ Tambah Penilaian</a>
+            </div>
+            <?php if ($totalGuruTA > 0): ?>
+                <div style="font-size:11.5px;color:#9ca3af;">
+                    Nilai = rata-rata semua penilaian guru di TA ini
+                </div>
+            <?php endif; ?>
         </div>
+
+        <?php if ($totalGuruTA === 0): ?>
+            <div class="empty-big">
+                <div class="emoji">🔍</div>
+                <div class="title">Belum ada guru dinilai di TA <?= htmlspecialchars($activeTA) ?></div>
+                <div class="subtitle">Coba pilih TA lain atau tambahkan penilaian baru.</div>
+            </div>
+        <?php else: ?>
+
+            <!-- ═══ Podium Top 3 ═══ -->
+            <?php if (count($ranked) >= 1): ?>
+            <div id="podiumSection" class="podium-wrap">
+                <div class="podium-title">🏆 Podium Teratas · TA <?= htmlspecialchars($activeTA) ?></div>
+                <div class="podium-row">
+                    <?php
+                    $podiumOrder   = [1, 0, 2];
+                    $podiumVariant = [0 => 'gold', 1 => 'silver', 2 => 'bronze'];
+                    $podiumMedal   = [0 => '🥇',   1 => '🥈',     2 => '🥉'];
+
+                    foreach ($podiumOrder as $pIdx):
+                        if (!isset($ranked[$pIdx])) continue;
+                        $pr = $ranked[$pIdx];
+                        [$pred, $col] = predikat($pr['nilai_akhir']);
+                        $variant = $podiumVariant[$pIdx];
+                    ?>
+                        <div class="podium-item">
+                            <div class="podium-medal"><?= $podiumMedal[$pIdx] ?></div>
+                            <div class="podium-card podium-<?= $variant ?>">
+                                <div class="podium-name"><?= htmlspecialchars($pr['nama']) ?></div>
+                                <div class="podium-jabatan"><?= htmlspecialchars($pr['jabatan'] ?? '—') ?></div>
+                                <div class="podium-nilai" style="color:<?= $col ?>;"><?= $pr['nilai_akhir'] ?>%</div>
+                                <div class="podium-pred" style="color:<?= $col ?>;"><?= $pred ?></div>
+                            </div>
+                            <div class="podium-rank badge-<?= $variant ?>">#<?= $pIdx + 1 ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- ═══ Tabel ═══ -->
+            <div style="overflow-x:auto;">
+                <table class="rank-table" id="rankTable">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;">Rank</th>
+                            <th>Guru</th>
+                            <th>Tipe</th>
+                            <th style="min-width:240px;">Nilai Rata-rata</th>
+                            <th>Predikat</th>
+                            <th style="text-align:center;">Jml Penilaian</th>
+                            <th>Terakhir</th>
+                            <th style="width:80px;">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($ranked as $r):
+                            [$pred, $col] = predikat($r['nilai_akhir']);
+                            $medal = medalEmoji($r['rank']);
+                            $badgeMap = ['guru_quran'=>'quran','guru_kelas'=>'kelas','mapel'=>'mapel','gtk'=>'gtk'];
+                            $tipeKey  = $badgeMap[$r['tipe']] ?? 'gtk';
+                        ?>
+                            <tr data-tipe="<?= $r['tipe'] ?>"
+                                data-nilai="<?= $r['nilai_akhir'] ?>"
+                                data-nama="<?= htmlspecialchars($r['nama'], ENT_QUOTES) ?>"
+                                data-jabatan="<?= htmlspecialchars($r['jabatan'] ?? '', ENT_QUOTES) ?>"
+                                data-col="<?= $col ?>"
+                                data-pred="<?= $pred ?>">
+                                <td>
+                                    <?php if ($medal): ?>
+                                        <span class="rank-medal"><?= $medal ?></span>
+                                    <?php else: ?>
+                                        <span class="rank-num">#<?= $r['rank'] ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <div class="guru-nama"><?= htmlspecialchars($r['nama']) ?></div>
+                                    <?php if (!empty($r['jabatan'])): ?>
+                                        <div class="guru-jabatan"><?= htmlspecialchars($r['jabatan']) ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <span class="badge-tipe badge-<?= $tipeKey ?>">
+                                        <?= $tipeLabel[$r['tipe']] ?? $r['tipe'] ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="nilai-wrap">
+                                        <div class="nilai-bar">
+                                            <div class="nilai-bar-fill" style="width:<?= min($r['nilai_akhir'], 100) ?>%;background:<?= $col ?>;"></div>
+                                        </div>
+                                        <span class="nilai-angka" style="color:<?= $col ?>;"><?= $r['nilai_akhir'] ?>%</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="nilai-pred" style="background:<?= $col ?>15;color:<?= $col ?>;"><?= $pred ?></span>
+                                </td>
+                                <td style="text-align:center;">
+                                    <span class="jml-badge" title="Jumlah penilaian di TA ini"><?= $r['jml_penilaian'] ?>×</span>
+                                </td>
+                                <td>
+                                    <small style="color:#6b7280;"><?= $r['last_penilaian'] ? date('d/m/Y', strtotime($r['last_penilaian'])) : '-' ?></small>
+                                </td>
+                                <td>
+                                    <?php if ($r['last_id']): ?>
+                                        <a href="cetak.php?id=<?= $r['last_id'] ?>" class="btn-primary-custom btn-sm-custom btn-view" target="_blank">Cetak</a>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="noResultMsg" style="display:none;" class="empty-state">
+                Tidak ada guru yang cocok dengan filter. Coba ubah atau reset filter.
+            </div>
+
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 
 <script>
     function medalHtml(rank) {
-        if (rank === 1) return '<span style="font-size:18px;">🥇</span>';
-        if (rank === 2) return '<span style="font-size:18px;">🥈</span>';
-        if (rank === 3) return '<span style="font-size:18px;">🥉</span>';
-        return '<span style="font-weight:700;color:#9ca3af;font-size:14px;">#' + rank + '</span>';
+        if (rank === 1) return '<span class="rank-medal">🥇</span>';
+        if (rank === 2) return '<span class="rank-medal">🥈</span>';
+        if (rank === 3) return '<span class="rank-medal">🥉</span>';
+        return '<span class="rank-num">#' + rank + '</span>';
     }
 
     function applyFilter() {
         const tipe     = document.getElementById('filterTipe').value;
         const pred     = document.getElementById('filterPredikat').value;
-        const rows     = document.querySelectorAll('#rankTable tbody tr');
+        const table    = document.getElementById('rankTable');
+        if (!table) return;
+
+        const rows     = table.querySelectorAll('tbody tr');
         const podium   = document.getElementById('podiumSection');
+        const noResult = document.getElementById('noResultMsg');
         const filterOn = tipe || pred !== '';
 
         let visibleRank = 1;
-        const podiumData = []; // kumpulkan top-3 dari filter aktif
+        const podiumData = [];
 
         rows.forEach(tr => {
+            if (!tr.dataset.tipe) return;
+
             const rowTipe  = tr.dataset.tipe;
             const rowNilai = parseFloat(tr.dataset.nilai);
 
@@ -285,72 +658,75 @@ function medalEmoji($rank)
             if (tipe && rowTipe !== tipe) show = false;
             if (pred !== '') {
                 const p = parseInt(pred);
-                if (p === 90 && rowNilai < 90)                    show = false;
+                if (p === 90 && rowNilai < 90)                          show = false;
                 else if (p === 75 && (rowNilai < 75 || rowNilai >= 90)) show = false;
                 else if (p === 60 && (rowNilai < 60 || rowNilai >= 75)) show = false;
                 else if (p === 40 && (rowNilai < 40 || rowNilai >= 60)) show = false;
-                else if (p === 0  && rowNilai >= 40)               show = false;
+                else if (p === 0  && rowNilai >= 40)                    show = false;
             }
 
             tr.style.display = show ? '' : 'none';
 
             if (show) {
-                // Update nomor rank sesuai urutan yang terlihat
-                const rankCell = tr.querySelector('td:first-child div');
+                const rankCell = tr.querySelector('td:first-child');
                 if (rankCell) rankCell.innerHTML = medalHtml(visibleRank);
 
-                // Kumpulkan data untuk podium
                 if (visibleRank <= 3) {
                     podiumData.push({
-                        rank:  visibleRank,
-                        nama:  tr.dataset.nama,
-                        jabatan: tr.dataset.jabatan,
-                        nilai: rowNilai,
-                        col:   tr.dataset.col,
-                        pred:  tr.dataset.pred
+                        rank:    visibleRank,
+                        nama:    tr.dataset.nama,
+                        jabatan: tr.dataset.jabatan || '—',
+                        nilai:   rowNilai,
+                        col:     tr.dataset.col,
+                        pred:    tr.dataset.pred
                     });
                 }
                 visibleRank++;
             }
         });
 
-        // Tampilkan / sembunyikan podium
+        if (noResult) noResult.style.display = (visibleRank === 1 && filterOn) ? '' : 'none';
+
         if (!podium) return;
+
         if (!filterOn) {
-            podium.style.display = ''; // kembalikan podium global
+            if (podium.dataset.rebuilt === '1') {
+                window.location.reload();
+                return;
+            }
+            podium.style.display = '';
             return;
         }
 
-        // Rebuild podium sesuai filter
-        if (podiumData.length === 0) { podium.style.display = 'none'; return; }
+        if (podiumData.length === 0) {
+            podium.style.display = 'none';
+            return;
+        }
+
         podium.style.display = '';
+        podium.dataset.rebuilt = '1';
 
-        const medals  = ['🥇','🥈','🥉'];
-        const heights = [130, 110, 90];
-        const pColors = ['#f5c842','#c0c0c0','#cd7f32'];
-        const pBg     = ['#fef9ec','#f8fafc','#fdf6ee'];
-        // urutan tampil: #2, #1, #3
-        const order = [1, 0, 2];
+        const medals   = ['🥇','🥈','🥉'];
+        const variants = ['gold','silver','bronze'];
+        const order    = [1, 0, 2];
 
-        let html = '<div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:16px;text-align:center;text-transform:uppercase;letter-spacing:0.5px;">🏆 Podium Teratas</div>';
-        html += '<div style="display:flex;justify-content:center;align-items:flex-end;gap:16px;flex-wrap:wrap;">';
+        let html = '<div class="podium-title">🏆 Podium Teratas (Filter Aktif)</div>';
+        html += '<div class="podium-row">';
         order.forEach(idx => {
             if (!podiumData[idx]) return;
-            const d  = podiumData[idx];
-            const pc = pColors[idx];
-            const pb = pBg[idx];
-            html += `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto;">
-                <div style="font-size:24px;">${medals[idx]}</div>
-                <div style="background:${pb};border:2px solid ${pc};border-radius:12px;padding:10px 14px;text-align:center;max-width:140px;">
-                    <div style="font-size:13px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${d.nama}</div>
-                    <div style="font-size:11px;color:#6b7280;margin-top:2px;">${d.jabatan}</div>
-                    <div style="font-size:20px;font-weight:800;color:${d.col};margin-top:4px;">${d.nilai}%</div>
-                    <div style="font-size:11px;color:${d.col};font-weight:600;">${d.pred}</div>
-                </div>
-                <div style="background:${pc};color:#fff;font-weight:800;font-size:13px;padding:6px 18px;border-radius:0 0 8px 8px;display:flex;align-items:center;justify-content:center;">
-                    #${idx + 1}
-                </div>
-            </div>`;
+            const d = podiumData[idx];
+            const v = variants[idx];
+            html += `
+                <div class="podium-item">
+                    <div class="podium-medal">${medals[idx]}</div>
+                    <div class="podium-card podium-${v}">
+                        <div class="podium-name">${d.nama}</div>
+                        <div class="podium-jabatan">${d.jabatan}</div>
+                        <div class="podium-nilai" style="color:${d.col};">${d.nilai}%</div>
+                        <div class="podium-pred" style="color:${d.col};">${d.pred}</div>
+                    </div>
+                    <div class="podium-rank badge-${v}">#${idx + 1}</div>
+                </div>`;
         });
         html += '</div>';
         podium.innerHTML = html;

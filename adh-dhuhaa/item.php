@@ -44,9 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_item'])) {
     $item_id   = (int)($_POST['item_id'] ?? 0);
 
     if (!$nama_item) {
-        $msg = ['type' => 'err', 'text' => 'Nama item tidak boleh kosong!'];
+        session_write_close();
+        header('Location: item.php?msg=' . urlencode('⚠️ Nama item tidak boleh kosong!'));
+        exit;
     } elseif (mb_strlen($nama_item) > 255) {
-        $msg = ['type' => 'err', 'text' => 'Nama item terlalu panjang! Maksimal 255 karakter.'];
+        session_write_close();
+        header('Location: item.php?msg=' . urlencode('⚠️ Nama item terlalu panjang! Maksimal 255 karakter.'));
+        exit;
     } else {
         if ($item_id) {
             $pdo->prepare("UPDATE item SET nama_item = ? WHERE id_item = ?")
@@ -58,7 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_item'])) {
             $cek = $pdo->prepare("SELECT COUNT(*) FROM item WHERE nama_item = ?");
             $cek->execute([$nama_item]);
             if ((int)$cek->fetchColumn() > 0) {
-                $msg = ['type' => 'err', 'text' => 'Item dengan nama tersebut sudah ada!'];
+                session_write_close();
+                header('Location: item.php?msg=' . urlencode('⚠️ Item dengan nama tersebut sudah ada!'));
+                exit;
             } else {
                 $pdo->prepare("INSERT INTO item (nama_item) VALUES (?)")
                     ->execute([$nama_item]);
@@ -70,8 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_item'])) {
     }
 }
 
-// Pesan dari redirect (ditangani oleh toast di footer via ?msg=)
-$msg = null;
+// Pesan dari redirect ditangani oleh toast di footer via ?msg=
 
 // ================================================================
 // LOAD DATA

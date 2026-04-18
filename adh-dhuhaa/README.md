@@ -5,70 +5,98 @@
 
 ## 📋 Deskripsi
 
-Aplikasi web sistem penilaian kinerja **Guru dan Tenaga Kependidikan (GTK)** berbasis PHP + MySQL.  
+Aplikasi web sistem penilaian kinerja **Guru dan Tenaga Kependidikan (GTK)** berbasis PHP + MySQL.
 Dikonversi dari spreadsheet Excel menjadi sistem web yang terintegrasi, responsif, dan mudah dikelola.
 
 ---
 
-## 🆕 Changelog Terbaru
+## 🆕 Changelog
 
-### v1.2 — April 2026 (Bugfix & Dokumentasi Kode Lengkap)
+### v1.3 — April 2026 (Testing Menyeluruh & Bugfix)
 
-#### 🐛 Bug yang Ditemukan & Diperbaiki
+#### 🐛 Bug Ditemukan & Diperbaiki
 
-| # | File | Jenis Bug | Deskripsi | Status |
-|---|------|-----------|-----------|--------|
-| 1 | `guru.php` | **CSS class tidak terdefinisi** | Alert peringatan menggunakan class `alert-danger-custom` yang tidak ada di CSS `header.php`. Yang terdefinisi adalah `alert-error-custom` | ✅ Fixed |
-| 2 | `guru.php` | **Double POST handler tanpa guard** | Dua blok `if (REQUEST_METHOD === POST)` berjalan berurutan tanpa guard. Saat form tipe disubmit, blok guru ikut ter-trigger dan menampilkan error "Nama wajib diisi" | ✅ Fixed |
-| 3 | `cetak.php` | **`$subTotalsCustom` tidak pernah dihitung** | Variabel dipakai di template HTML tapi tidak diisi nilainya — berpotensi PHP Notice/undefined variable jika komponen custom aktif | ✅ Fixed |
-| 4 | `dashboard.php` | **`$penilaianFinal` = `$totalPenilaian`** | Query identik karena tidak ada kolom `status`. "Draft" selalu 0. By-design tapi tidak terdokumentasi sehingga membingungkan | ✅ Documented |
+| # | File | Bug | Dampak | Status |
+|---|------|-----|--------|--------|
+| 1 | `guru.php` | `catatHistory()` dipanggil di dalam `beginTransaction()` — jika history gagal, INSERT guru ikut di-rollback | Data guru **tidak tersimpan** sama sekali | ✅ Fixed |
+| 2 | `guru.php` | `SELECT id FROM tipe_guru` — kolom `id` tidak ada, harusnya `id_tipe_guru` | PDOException saat edit/cek duplikat tipe guru | ✅ Fixed |
+| 3 | `guru.php` | JS `data.id` harusnya `data.id_guru` di `openEdit()` | Edit guru selalu INSERT baru bukan UPDATE | ✅ Fixed |
+| 4 | `guru.php` | JS `data.id` harusnya `data.id_tipe_guru` di `openEditTipe()` | Edit tipe selalu INSERT baru bukan UPDATE | ✅ Fixed |
+| 5 | `guru.php` | `match` (PHP 8.0+) dan arrow `fn()` (PHP 7.4+) | Seluruh file gagal di-parse di PHP < 7.4 | ✅ Fixed |
+| 6 | `guru.php` | `$msg` diset tanpa redirect — toast hanya baca dari URL `?msg=` | Pesan error validasi tidak pernah tampil | ✅ Fixed |
+| 7 | `item.php` | `$msg = null` menimpa error validasi POST | "Nama kosong", "sudah ada" tidak pernah tampil | ✅ Fixed |
+| 8 | `penilaian.php` | `$msg` dari POST tidak ditampilkan di HTML | User tidak tahu ada error saat simpan | ✅ Fixed |
+| 9 | `penilaian.php` | DELETE tanpa try-catch | Halaman crash jika DELETE gagal | ✅ Fixed |
 
-#### 📝 Penambahan Komentar & Dokumentasi Kode
+#### ✅ Hasil Pengujian Fitur
 
-- ✅ Docblock `/** @param @return */` pada setiap fungsi PHP
-- ✅ Section comment `// ─── ... ─` memisahkan blok logika utama
-- ✅ Inline comment pada setiap baris kode yang memerlukan penjelasan
-- ✅ Komentar arsitektur pada variabel/logika yang tidak intuitif
-- ✅ Guard pada double POST handler diberi komentar alasan kebutuhan
+| Modul | Fitur | Status |
+|-------|-------|--------|
+| Login/Logout | Autentikasi bcrypt, redirect, error message | ✅ |
+| Dashboard | Statistik guru & penilaian, akses cepat | ✅ |
+| Guru – CRUD | Tambah, edit, hapus, filter, statistik per tipe | ✅ |
+| Guru – History | Riwayat aksi, filter, hapus baris, reset semua | ✅ |
+| Tipe Guru – CRUD | Tambah, edit, hapus (jika tidak dipakai) | ✅ |
+| Item (Bank Soal) | Tambah, edit, hapus, status penggunaan | ✅ |
+| Custom Penilaian | Buat template TA+tipe, tambah indikator+item | ✅ |
+| Penilaian – CRUD | Tambah, edit, hapus satu/terpilih/semua | ✅ |
+| Penilaian – Filter | Filter TA, tipe, nama guru | ✅ |
+| Rekap | Nilai rata-rata, filter periode & tipe | ✅ |
+| Ranking | Ranking nilai, podium top-3, filter | ✅ |
+| Cetak | Raport PKG satu/semua, print/PDF | ✅ |
+| API AJAX | Komponen per tipe, item per komponen | ✅ |
 
 ---
 
-### v1.1 — April 2026 (Bugfix Redirect Loop)
-- Fix `ERR_TOO_MANY_REDIRECTS`: `session_write_close()` sebelum setiap `header('Location:')`
+### v1.2 — April 2026 (Bugfix & Dokumentasi)
 
-### v1.0 — April 2026 (Autocomplete & Dokumentasi Awal)
-- `autocomplete="off"` di semua `<form>`
-- Komentar awal semua file PHP
-- `config.php` ditulis ulang dengan type-hint modern
+| # | File | Bug | Status |
+|---|------|-----|--------|
+| 1 | `guru.php` | CSS class tidak terdefinisi | ✅ Fixed |
+| 2 | `guru.php` | Double POST handler tanpa guard | ✅ Fixed |
+| 3 | `cetak.php` | `$subTotalsCustom` tidak dihitung | ✅ Fixed |
+| 4 | `dashboard.php` | `$penilaianFinal` = `$totalPenilaian` (by-design) | ✅ Documented |
+
+### v1.1 — April 2026
+- Fix `ERR_TOO_MANY_REDIRECTS`: `session_write_close()` sebelum setiap redirect
+
+### v1.0 — April 2026
+- Rilis awal, konversi dari Excel ke web
 
 ---
 
 ## 🚀 Cara Instalasi
 
 ### 1. Persyaratan Sistem
-| Komponen   | Versi Minimum |
-|------------|--------------|
-| PHP        | 7.4+ (disarankan 8.1+) |
-| MySQL      | 5.7+ atau MariaDB 10.x |
-| Web Server | Apache / Nginx / XAMPP / WAMP |
+
+| Komponen   | Versi Minimum | Catatan |
+|------------|--------------|---------|
+| PHP        | 7.0+         | Disarankan 8.1+ |
+| MySQL      | 5.7+         | MariaDB 10.x juga didukung |
+| Web Server | Apache / Nginx / XAMPP / WAMP | |
 
 ### 2. Setup Database
+
 ```sql
 CREATE DATABASE adh_dhuhaa CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-mysql -u root -p adh_dhuhaa < adh_dhuhaa.sql
+mysql -u root -p adh_dhuhaa < "adh_dhuhaa (4).sql"
 ```
-Atau via **phpMyAdmin**: buat database → tab Import → pilih `adh_dhuhaa.sql`.
 
-### 3. Konfigurasi Database
+Atau via **phpMyAdmin**: buat database → Import → pilih file SQL.
+
+### 3. Konfigurasi
+
 Edit `includes/config.php`:
+
 ```php
-define('DB_HOST', 'localhost');   // Host MySQL
-define('DB_USER', 'root');        // Username MySQL
-define('DB_PASS', '');            // Password MySQL
-define('DB_NAME', 'adh_dhuhaa'); // Nama database
+define('DB_HOST', 'localhost');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('DB_NAME', 'adh_dhuhaa');
 ```
 
 ### 4. Lokasi File
+
 ```
 XAMPP  → C:/xampp/htdocs/adh-dhuhaa/
 WAMP   → C:/wamp/www/adh-dhuhaa/
@@ -76,7 +104,8 @@ Linux  → /var/www/html/adh-dhuhaa/
 ```
 
 ### 5. Akses
-Buka: `http://localhost/adh-dhuhaa/`
+
+`http://localhost/adh-dhuhaa/`
 
 ---
 
@@ -87,7 +116,7 @@ Buka: `http://localhost/adh-dhuhaa/`
 | `admin`  | `password` | Administrator  |
 | `kepala` | `password` | Kepala Sekolah |
 
-> ⚠️ Wajib ganti password setelah login pertama!
+> ⚠️ Ganti password setelah login pertama!
 
 ---
 
@@ -95,23 +124,26 @@ Buka: `http://localhost/adh-dhuhaa/`
 
 ```
 adh-dhuhaa/
-├── index.php           → Entry point: redirect ke login.php
-├── login.php           → Autentikasi (session PHP + bcrypt)
-├── logout.php          → Hancurkan session & redirect ke login
-├── dashboard.php       → Dashboard: statistik & penilaian terbaru
-├── guru.php            → CRUD guru + log riwayat + manajemen tipe
-├── penilaian.php       → Form input penilaian kinerja per guru
-├── komponen.php        → Manajemen indikator & poin penilaian
-├── rekap.php           → Rekap semua penilaian + filter
-├── ranking.php         → Ranking guru berdasarkan nilai kinerja
-├── cetak.php           → Cetak raport PKG (print/PDF browser)
-├── api_komponen.php    → Endpoint AJAX: komponen per tipe guru
-├── adh_dhuhaa.sql      → Skema database & data awal
-├── README.md           → Dokumentasi proyek (file ini)
+├── index.php                → Entry point → redirect ke login.php
+├── login.php                → Autentikasi bcrypt + session
+├── logout.php               → Hancurkan session → redirect login
+├── dashboard.php            → Statistik & penilaian terbaru
+├── guru.php                 → CRUD guru + history + manajemen tipe
+├── penilaian.php            → Input & kelola penilaian kinerja
+├── item.php                 → Bank soal item penilaian (master)
+├── custom_penilaian.php     → Template penilaian per TA & tipe guru
+├── komponen.php             → Redirect ke custom_penilaian.php (deprecated)
+├── rekap.php                → Rekap nilai semua guru
+├── ranking.php              → Ranking guru berdasarkan nilai
+├── cetak.php                → Cetak raport PKG (print/PDF)
+├── api_custom_komponen.php  → AJAX: komponen & item per tipe/TA
+├── api_komponen.php         → AJAX: item per tipe (legacy)
+├── adh_dhuhaa (4).sql       → Skema & data awal database
+├── README.md                → Dokumentasi (file ini)
 └── includes/
-    ├── config.php      → Koneksi DB, konstanta, helper functions
-    ├── header.php      → Sidebar + navbar + Bootstrap 5 + CSS
-    └── footer.php      → Penutup HTML + DataTables + JS helpers
+    ├── config.php           → Koneksi DB + helper functions
+    ├── header.php           → Sidebar + navbar + Bootstrap 5 + CSS
+    └── footer.php           → Penutup HTML + DataTables + toast JS
 ```
 
 ---
@@ -120,124 +152,86 @@ adh-dhuhaa/
 
 ### `includes/config.php`
 
-| Fungsi | Parameter | Return | Deskripsi |
-|--------|-----------|--------|-----------|
-| `isLoggedIn()` | — | `bool` | Cek apakah user sudah login via session |
-| `requireLogin()` | — | `void` | Redirect ke `login.php` jika belum login |
-| `getCurrentUser()` | — | `array\|null` | Ambil data user dari session |
-| `sanitize($data)` | `string` | `string` | Trim + strip_tags + htmlspecialchars |
-| `jsonResponse($data, $code)` | `mixed, int` | `never` | Kirim JSON response dan exit |
-| `getTipeGuru(PDO $pdo)` | `PDO` | `array` | Ambil semua tipe dari `tipe_guru` (cached) |
-| `getTipeLabel(PDO $pdo, $kode)` | `PDO, string` | `string` | Label tampil dari kode tipe |
-| `isValidTipe(PDO $pdo, $kode)` | `PDO, string` | `bool` | Validasi kode tipe ke DB |
+| Fungsi | Return | Deskripsi |
+|--------|--------|-----------|
+| `isLoggedIn()` | `bool` | Cek `$_SESSION['user_id']` |
+| `requireLogin()` | `void` | Redirect login jika belum login |
+| `getCurrentUser()` | `array\|null` | Ambil `$_SESSION['user']` |
+| `sanitize($data)` | `string` | trim + strip_tags + htmlspecialchars |
+| `jsonResponse($data, $code)` | `never` | JSON response + exit |
+| `getTipeGuru(PDO)` | `array` | Ambil tipe dari DB, di-cache ke `$GLOBALS` |
+| `getTipeLabel(PDO, $kode)` | `string` | Label dari kode tipe |
+| `isValidTipe(PDO, $kode)` | `bool` | Validasi kode tipe ke DB |
 
 ### `guru.php`
 
-| Fungsi | Parameter | Return | Deskripsi |
-|--------|-----------|--------|-----------|
-| `catatHistory()` | `$pdo,$aksi,$guru_id,$data,$oleh,$ket` | `void` | Simpan log perubahan ke `guru_history` |
+| Fungsi | Deskripsi |
+|--------|-----------|
+| `catatHistory($pdo, $aksi, $guru_id, $data, $oleh, $ket)` | INSERT ke `guru_history`. Dipanggil dalam try-catch **terpisah** dari operasi utama agar kegagalan history tidak membatalkan INSERT/UPDATE/DELETE guru |
 
 ### `penilaian.php`
 
-| Fungsi | Parameter | Return | Deskripsi |
-|--------|-----------|--------|-----------|
-| `getKomponen()` | `$pdo, $tipe` | `array` | Ambil semua item+kategori untuk tipe guru (JOIN) |
+| Fungsi | Deskripsi |
+|--------|-----------|
+| `renderKomponenHtml($isiByInd, $editDetail)` | Render HTML form penilaian server-side (untuk mode edit) |
 
 ### `rekap.php`
 
-| Fungsi | Parameter | Return | Deskripsi |
-|--------|-----------|--------|-----------|
-| `nilaiLabel()` | `float\|null $n` | `array` | Kembalikan `[label, warna_hex]` dari persentase |
+| Fungsi | Deskripsi |
+|--------|-----------|
+| `nilaiLabel($n)` | `[label, warna_hex]` dari persentase |
 
 ### `ranking.php`
 
-| Fungsi | Parameter | Return | Deskripsi |
-|--------|-----------|--------|-----------|
-| `predikat()` | `float\|null $n` | `array` | Kembalikan `[label, warna, dot_emoji]` |
-| `medalEmoji()` | `int $rank` | `string\|null` | Emoji 🥇🥈🥉 untuk rank 1–3 |
+| Fungsi | Deskripsi |
+|--------|-----------|
+| `predikat($n)` | `[label, warna, dot_emoji]` dari nilai |
+| `medalEmoji($rank)` | Emoji 🥇🥈🥉 untuk rank 1–3 |
 
 ### `cetak.php`
 
-| Fungsi | Parameter | Return | Deskripsi |
-|--------|-----------|--------|-----------|
-| `getPredikat()` | `float $pct` | `array` | Kembalikan `[label, simbol_bintang]` |
-| `tanggalIndonesia()` | `string $dateStr` | `string` | Format tanggal ke Bahasa Indonesia |
-
----
-
-## ✨ Fitur Lengkap
-
-### 🔐 Autentikasi
-- Session PHP + redirect otomatis jika belum login
-- Password bcrypt (`password_hash` / `password_verify`)
-- `autocomplete="off"` mencegah browser menyimpan kredensial
-
-### 👥 Manajemen Guru (`guru.php`)
-- CRUD data guru dengan modal Bootstrap
-- Tipe guru **dinamis** dari tabel `tipe_guru` (bukan hardcode)
-- Log riwayat otomatis setiap aksi (tambah/edit/hapus)
-- Filter & reset riwayat
-- Manajemen tipe guru: tambah, edit, hapus (jika tidak dipakai)
-
-### 📝 Penilaian Kinerja (`penilaian.php`)
-- Komponen penilaian dimuat otomatis via AJAX sesuai tipe guru
-- Input nilai skala 1–5 per poin dengan radio button
-- Tambah kategori & poin kustom langsung dari form (tersimpan permanen ke DB)
-- Hapus satu / pilih banyak / hapus semua
-- Kalkulasi persentase dan predikat otomatis
-
-### 📊 Komponen Penilaian (`komponen.php`)
-- Tambah/edit/hapus indikator (kategori) per tipe guru
-- Tambah/edit/hapus poin penilaian di bawah indikator
-- Penomoran otomatis: `{urutan_indikator}.{urutan_poin}`
-- Tab navigasi dinamis per tipe guru
-
-### 📈 Rekap & Ranking
-- **`rekap.php`**: nilai rata-rata semua guru, filter tipe & periode, progress bar
-- **`ranking.php`**: podium top-3, filter tipe & predikat, progress bar
-- Predikat + warna otomatis
-
-### 🖨️ Cetak Raport (`cetak.php`)
-- Kop surat resmi + tabel penilaian + predikat + TTD
-- Mode cetak satu (`?id=N`) atau cetak semua (`?all=1&periode=...&tipe=...`)
-- Export PDF via Print browser (Ctrl+P → Save as PDF)
+| Fungsi | Deskripsi |
+|--------|-----------|
+| `getPredikat($pct)` | `[label, simbol_bintang]` dari persentase |
+| `tanggalIndonesia($dateStr)` | Format tanggal ke Bahasa Indonesia |
 
 ---
 
 ## 🗄️ Skema Database
 
-| Tabel | Deskripsi |
-|-------|-----------|
-| `users` | Akun login (username, password bcrypt, role) |
-| `tipe_guru` | Daftar tipe guru: kode, label, urutan |
-| `guru` | Data guru & GTK |
-| `guru_history` | Log riwayat perubahan data guru |
-| `komponen_penilaian` | Indikator/kategori penilaian per tipe guru |
-| `item` | Poin penilaian di bawah indikator |
-| `penilaian` | Header penilaian per guru per periode |
-| `detail_penilaian` | Nilai per item untuk setiap record penilaian |
+| Tabel | PK | Deskripsi |
+|-------|----|-----------|
+| `users` | `id_users` | Akun login |
+| `tipe_guru` | `id_tipe_guru` | Daftar tipe guru (kode, label, urutan) |
+| `guru` | `id_guru` | Data guru & GTK, FK → `tipe_guru.kode` |
+| `guru_history` | `id_guru_history` | Log riwayat perubahan guru |
+| `item` | `id_item` | Bank soal poin penilaian |
+| `komponen` | `id_komponen` | Template penilaian (TA + tipe guru) |
+| `isi` | `id_isi` | Mapping komponen ↔ indikator ↔ item |
+| `penilaian` | `id_penilaian` | Header penilaian per guru per periode |
+| `hasil` | `id_hasil` | Nilai per item per penilaian |
+
+### Alur Data
+
+```
+tipe_guru ──< guru ──< penilaian ──< hasil
+                              │
+komponen ──< isi ──< item ───┘ (via id_item)
+    │
+    └──< penilaian (via id_komponen)
+```
 
 ---
 
-## 📊 Skala Penilaian
+## 📊 Skala Penilaian & Predikat
 
-| Nilai | Keterangan   |
-|-------|-------------|
-| 1     | Kurang      |
-| 2     | Cukup       |
-| 3     | Baik        |
-| 4     | Sangat Baik |
-| 5     | Istimewa    |
-
-## 🏆 Predikat Akhir
-
-| Persentase | Predikat            |
-|------------|---------------------|
-| ≥ 90%      | Sangat Baik Sekali  |
-| 75–89%     | Sangat Baik         |
-| 60–74%     | Baik                |
-| 40–59%     | Cukup               |
-| < 40%      | Kurang              |
+| Nilai | Keterangan       | | Persentase | Predikat           |
+|-------|-----------------|---|------------|--------------------|
+| 1     | Kurang          | | ≥ 90%      | Sangat Baik Sekali |
+| 2     | Cukup           | | 75–89%     | Sangat Baik        |
+| 3     | Baik            | | 60–74%     | Baik               |
+| 4     | Sangat Baik     | | 40–59%     | Cukup              |
+| 5     | Sangat Baik Sekali | | < 40%   | Kurang             |
 
 ---
 
@@ -245,12 +239,13 @@ adh-dhuhaa/
 
 | Fitur | Implementasi |
 |-------|-------------|
-| SQL Injection | PDO Prepared Statements di **semua** query |
-| XSS | `htmlspecialchars()` pada semua output; `sanitize()` pada semua input |
+| SQL Injection | PDO Prepared Statements di semua query |
+| XSS | `htmlspecialchars()` semua output; `sanitize()` semua input |
 | Autentikasi | Session PHP + `requireLogin()` di setiap halaman |
 | Password | Bcrypt via `password_hash()` / `password_verify()` |
-| Autocomplete | `autocomplete="off"` di semua `<form>` |
-| Validasi tipe | `isValidTipe()` — tidak bergantung pada hardcode array |
+| Autocomplete | `autocomplete="off"` di semua form |
+| Validasi tipe | `isValidTipe()` query ke DB, tidak hardcode |
+| Error handling | try-catch + redirect di semua operasi DB |
 
 ---
 
@@ -258,48 +253,76 @@ adh-dhuhaa/
 
 | Layer     | Teknologi |
 |-----------|-----------|
-| Backend   | PHP 7.4+ (PDO, Session) |
-| Database  | MySQL / MariaDB |
+| Backend   | PHP 7.0+ (PDO, Session) |
+| Database  | MySQL 5.7+ / MariaDB |
 | Frontend  | Bootstrap 5, DataTables 1.13 |
 | Font      | Google Fonts (Playfair Display, DM Sans) |
-| Icons     | SVG inline |
-| Print/PDF | Browser Print (Ctrl+P) |
+| Print/PDF | Browser Print (Ctrl+P → Save as PDF) |
 
 ---
 
 ## 🔧 Panduan Pengembangan
 
-### Menambah Tipe Guru Baru
-1. Masuk menu **Data Guru → tab Tipe Guru → + Tambah Tipe**
-2. Isi kode (misal `btq`), label (misal `Guru BTQ`), urutan
-3. Tambah komponen penilaian di menu **Komponen Penilaian → tab tipe baru**
+### Alur Lengkap Penilaian Baru
 
-### Membedakan Draft vs Final
-Saat ini semua penilaian dianggap final (tidak ada kolom `status`):
-1. Tambah kolom: `ALTER TABLE penilaian ADD status ENUM('draft','final') DEFAULT 'draft';`
-2. Update `$penilaianFinal` di `dashboard.php`: `WHERE status = 'final'`
-3. Tambah tombol "Finalisasi" di `penilaian.php`
+```
+1. [Tambah Point Penilaian]     → Tambah item ke bank soal
+2. [Buat Pertanyaan Penilaian]  → Buat template TA + Tipe + item per indikator
+3. [Penilaian Kinerja]          → Pilih guru → TA → isi nilai → simpan
+4. [Rekap / Ranking]            → Lihat hasil
+5. [Cetak]                      → Export PDF
+```
+
+### Menambah Tipe Guru Baru
+
+1. **Data Guru → tab Tipe Guru → + Tambah Tipe**
+2. Isi kode (contoh: `btq`), label (`Guru BTQ`), urutan
+3. Tambah item di **Tambah Point Penilaian**
+4. Buat template di **Buat Pertanyaan Penilaian**
+
+### Prinsip Error Handling
+
+Semua operasi DB mengikuti pola:
+
+```php
+try {
+    // operasi DB
+    session_write_close();
+    header('Location: halaman.php?msg=' . urlencode('Berhasil!'));
+    exit;
+} catch (PDOException $e) {
+    error_log('[file.php] Error: ' . $e->getMessage());
+    session_write_close();
+    header('Location: halaman.php?msg=' . urlencode('⚠️ Gagal: ' . $e->getMessage()));
+    exit;
+}
+```
+
+Toast notification di `footer.php` membaca `?msg=` dari URL dan menampilkan pesan sukses/error otomatis.
 
 ### Cache Tipe Guru
-`getTipeGuru()` meng-cache hasil ke `$GLOBALS['_cache_tipe_guru']`.  
-Setelah modifikasi tabel `tipe_guru`, cache sudah di-reset otomatis via:
+
+`getTipeGuru()` cache ke `$GLOBALS['_cache_tipe_guru']`. Reset otomatis setelah CRUD tipe:
 ```php
 unset($GLOBALS['_cache_tipe_guru']);
 ```
-Ini sudah diterapkan di semua handler CRUD tipe di `guru.php`.
 
-### API Komponen (AJAX)
+### Konfigurasi Production
+
+Matikan debug mode di `guru.php`:
+```php
+// Komentari baris ini di production:
+// error_reporting(E_ALL);
+// ini_set('display_errors', '1');
+// ini_set('log_errors', '1');  // ← ini boleh tetap aktif untuk log server
 ```
-GET api_komponen.php?tipe={kode_tipe}
-```
-Mengembalikan JSON array item penilaian. Return `[]` jika tipe tidak valid.
 
 ---
 
 ## 📞 Informasi Sekolah
 
-**SD IT QURANI ADH-DHUHAA**  
-Jl. Melati I No. 257 Kel. Taman Bunga Kec. Gerunggang  
-Kota Pangkalpinang, Provinsi Kepulauan Bangka Belitung  
-NPSN: `70002294` | Telp: `(0717) 9116753`  
+**SD IT QURANI ADH-DHUHAA**
+Jl. Melati I No. 257 Kel. Taman Bunga Kec. Gerunggang
+Kota Pangkalpinang, Provinsi Kepulauan Bangka Belitung
+NPSN: `70002294` | Telp: `(0717) 9116753`
 Email: `sditquraniadduha@gmail.com`

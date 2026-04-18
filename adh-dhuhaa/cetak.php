@@ -459,8 +459,7 @@ requireLogin(); ?>
 
     // Skip penilaian yang tidak ditemukan (mode cetak semua)\n    if (!$pen) { continue; }
 
-    $grouped       = [];
-    $groupedCustom = [];
+    $grouped = [];
 
     if (!empty($pen['id_komponen'])) {
         // ── Penilaian Custom: item dari item via tabel isi ──────────────
@@ -517,21 +516,9 @@ requireLogin(); ?>
         $totalMax += $max;
     }
 
-    // Hitung custom komponen jika ada
-    $subTotalsCustom = [];
-    foreach ($groupedCustom as $kat => $items) {
-        $sum = array_sum(array_column($items, 'nilai'));
-        $max = count($items) * 5;
-        $pct = $max > 0 ? round($sum / $max * 100, 2) : 0;
-        $subTotalsCustom[$kat] = ['sum' => $sum, 'max' => $max, 'pct' => $pct];
-    }
-
     // Nilai akhir = rata-rata persen per indikator (dinamis, bukan flat sum)
     // Sehingga tiap indikator bobotnya sama apapun jumlah itemnya
-    $allPcts = array_merge(
-        array_column($subTotals, 'pct'),
-        array_column($subTotalsCustom, 'pct')
-    );
+    $allPcts = array_column($subTotals, 'pct');
     $totalPct = count($allPcts) > 0 ? round(array_sum($allPcts) / count($allPcts), 2) : 0;
 
     [$predikat, $stars] = getPredikat($totalPct);
@@ -639,41 +626,6 @@ requireLogin(); ?>
                     <?php endforeach; ?>
                 </tbody>
             </table>
-
-            <?php if ($groupedCustom): ?>
-                <!-- Tabel Komponen Custom -->
-                <div style="margin-top:6px;margin-bottom:4px;">
-                    <div style="font-size:12px;font-weight:600;color:var(--hijau);padding:6px 0;">📌 Komponen Penilaian Tambahan</div>
-                </div>
-                <table class="pkg-table" style="margin-bottom:24px;">
-                    <thead>
-                        <tr>
-                            <th style="width:40px;">No.</th>
-                            <th>Komponen Tambahan</th>
-                            <th style="width:70px;">Nilai</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php $cno = count($grouped) + 1;
-                        foreach ($groupedCustom as $kat => $items): ?>
-                            <tr class="row-kategori">
-                                <td colspan="3"><?= $cno++ ?>. <?= htmlspecialchars($kat) ?> <span style="font-size:11px;font-weight:400;color:#888;">(Tambahan)</span></td>
-                            </tr>
-                            <?php foreach ($items as $ci => $item): ?>
-                                <tr class="row-item">
-                                    <td style="text-align:center;color:#888;"><?= $ci + 1 ?></td>
-                                    <td><?= htmlspecialchars($item['nama_item']) ?></td>
-                                    <td><?= (int)$item['nilai'] ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                            <tr class="row-subtotal">
-                                <td colspan="2" style="text-align:right;padding-right:12px;">Jumlah Nilai <?= htmlspecialchars($kat) ?></td>
-                                <td style="text-align:center;"><?= $subTotalsCustom[$kat]['pct'] ?>%</td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
 
             <!-- Total Nilai Keseluruhan -->
             <table class="pkg-table" style="margin-bottom:24px;">

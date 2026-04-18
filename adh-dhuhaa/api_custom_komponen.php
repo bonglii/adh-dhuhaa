@@ -28,7 +28,7 @@ if (isset($_GET['id_komponen'])) {
     $id_komponen = (int)($_GET['id_komponen'] ?? 0);
     if (!$id_komponen) { jsonResponse([]); }
     $stmt = $pdo->prepare("
-        SELECT s.id_isi, s.id_komponen, s.nama_indikator, s.urutan_isi,
+        SELECT s.id_komponen, s.nama_indikator, s.urutan_isi,
                s.id_item, s.nomor_item, m.nama_item
         FROM isi s
         JOIN item m ON s.id_item = m.id_item

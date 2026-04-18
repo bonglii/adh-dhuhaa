@@ -1,4 +1,9 @@
 <?php
+// ─── Tampilkan semua error agar mudah didiagnosis ─────────────────────────────
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+ini_set('log_errors', '1');
+
 /**
  * guru.php — Halaman Manajemen Data Guru & GTK
  *
@@ -49,7 +54,6 @@ function catatHistory($pdo, $aksi, $guru_id, $data, $oleh, $keterangan = '')
 }
 
 // ─── Handle POST: Tambah atau Edit data guru ─────────────────────────────────
-// ─── Handle POST: Tambah atau Edit data guru ─────────────────────────────────
 // Guard: pastikan bukan submission dari form tipe guru (ditangani blok terpisah di bawah)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') !== 'tipe') {
     // Baca dan sanitasi semua field yang dikirim dari form modal
@@ -75,49 +79,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') !== 'ti
     ];
 
     if (!$nama) {
-        $msg = 'Nama guru wajib diisi!';
-    } else {
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('⚠️ Nama guru wajib diisi!'));
+        exit;
+    }
+
+    try {
         if ($post_action === 'edit' && $post_id) {
             // Ambil data lama untuk keterangan perubahan
             $lama = $pdo->prepare("SELECT * FROM guru WHERE id_guru=?");
             $lama->execute([$post_id]);
             $dataLama = $lama->fetch();
 
+            if (!$dataLama) {
+                session_write_close();
+                header('Location: guru.php?msg=' . urlencode('⚠️ Data guru tidak ditemukan!'));
+                exit;
+            }
+
             $stmt = $pdo->prepare("UPDATE guru SET nama=?,nrg=?,tmt_guru=?,jabatan=?,status_kepegawaian=?,tipe=? WHERE id_guru=?");
             $stmt->execute([$nama, $nrg, $tmt, $jabatan, $status, $tipe, $post_id]);
 
             $ket = 'Sebelum: ' . ($dataLama['nama'] ?? '') . ' | ' . ($dataLama['jabatan'] ?? '') . ' | ' . ($dataLama['tipe'] ?? '');
-            catatHistory($pdo, 'edit', $post_id, $dataGuru, $oleh, $ket);
+            try {
+                catatHistory($pdo, 'edit', $post_id, $dataGuru, $oleh, $ket);
+            } catch (PDOException $eHistory) {
+                error_log('[guru.php] catatHistory edit gagal (guru tetap diperbarui): ' . $eHistory->getMessage());
+            }
+
+            session_write_close();
+            header('Location: guru.php?msg=' . urlencode('Data guru berhasil diperbarui!'));
+            exit;
+
         } else {
+            // ── INSERT guru langsung (auto-commit) — tidak pakai transaction
+            // agar catatHistory yang gagal tidak membatalkan INSERT guru ──
             $stmt = $pdo->prepare("INSERT INTO guru (nama,nrg,tmt_guru,jabatan,status_kepegawaian,tipe) VALUES (?,?,?,?,?,?)");
             $stmt->execute([$nama, $nrg, $tmt, $jabatan, $status, $tipe]);
-            $newId = $pdo->lastInsertId();
+            $newId = (int)$pdo->lastInsertId();
 
-            catatHistory($pdo, 'tambah', $newId, $dataGuru, $oleh);
+            // catatHistory di try-catch tersendiri:
+            // kalau gagal, guru tetap tersimpan & error dicatat di log
+            try {
+                catatHistory($pdo, 'tambah', $newId, $dataGuru, $oleh);
+            } catch (PDOException $eHistory) {
+                error_log('[guru.php] catatHistory gagal (guru tetap tersimpan): ' . $eHistory->getMessage());
+            }
+
+            session_write_close();
+            header('Location: guru.php?msg=' . urlencode('Data guru berhasil disimpan!'));
+            exit;
         }
-        // Simpan session sebelum redirect agar data tidak hilang
+
+    } catch (PDOException $e) {
+        // Redirect dengan pesan error agar toast system di footer menampilkannya
+        $errMsg = $e->getMessage();
+        error_log('[guru.php] PDOException saat simpan guru: ' . $errMsg);
+
+        if (strpos($errMsg, 'fk_guru_tipe') !== false || strpos(strtolower($errMsg), 'foreign key') !== false) {
+            $errTampil = 'Tipe guru "' . $tipe . '" tidak terdaftar. Silakan tambah tipe tersebut di tab Tipe Guru terlebih dahulu.';
+        } elseif (strpos(strtolower($errMsg), 'duplicate') !== false) {
+            $errTampil = 'Data guru dengan NRG tersebut sudah ada.';
+        } else {
+            $errTampil = 'Terjadi kesalahan database: ' . $errMsg;
+        }
+
         session_write_close();
-        header('Location: guru.php?msg=' . urlencode('Data guru berhasil disimpan!'));
+        header('Location: guru.php?msg=' . urlencode('⚠️ Gagal menyimpan: ' . $errTampil));
         exit;
     }
 }
 
 // ─── Handle GET: Hapus satu entri riwayat ────────────────────────────────────
 if ($action === 'delete_history' && $id) {
-    $pdo->prepare("DELETE FROM guru_history WHERE id_guru_history=?")->execute([$id]);
-    // Simpan session sebelum redirect agar data tidak hilang
-    session_write_close();
-    header('Location: guru.php?msg=' . urlencode('Riwayat berhasil dihapus!') . '&tab=history');
-    exit;
+    try {
+        $pdo->prepare("DELETE FROM guru_history WHERE id_guru_history=?")->execute([$id]);
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('Riwayat berhasil dihapus!') . '&tab=history');
+        exit;
+    } catch (PDOException $e) {
+        error_log('[guru.php] PDOException saat hapus history id=' . $id . ': ' . $e->getMessage());
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('⚠️ Gagal menghapus riwayat.') . '&tab=history');
+        exit;
+    }
 }
 
 // ─── Handle GET: Reset (hapus semua) riwayat ─────────────────────────────────
 if ($action === 'reset_history') {
-    $pdo->exec("DELETE FROM guru_history");
-    // Simpan session sebelum redirect agar data tidak hilang
-    session_write_close();
-    header('Location: guru.php?msg=' . urlencode('Semua riwayat berhasil direset!') . '&tab=history');
-    exit;
+    try {
+        $pdo->exec("DELETE FROM guru_history");
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('Semua riwayat berhasil direset!') . '&tab=history');
+        exit;
+    } catch (PDOException $e) {
+        error_log('[guru.php] PDOException saat reset history: ' . $e->getMessage());
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('⚠️ Gagal mereset riwayat.') . '&tab=history');
+        exit;
+    }
 }
 
 // ─── Handle POST: Tambah / Edit tipe guru ────────────────────────────────────
@@ -134,57 +194,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'ti
     }
 
     if (!$kode || !$label) {
-        $msg = '⚠️ Kode dan Label tipe guru wajib diisi!';
-    } else {
+        // Redirect agar toast system di footer bisa menampilkan pesan
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('⚠️ Kode dan Label tipe guru wajib diisi!') . '&tab=tipe');
+        exit;
+    }
+
+    try {
         if ($post_action === 'edit' && $post_id) {
-            $cek = $pdo->prepare("SELECT id FROM tipe_guru WHERE kode=? AND id!=?");
+            // Cek apakah kode sudah dipakai tipe lain (gunakan id_tipe_guru, bukan id)
+            $cek = $pdo->prepare("SELECT id_tipe_guru FROM tipe_guru WHERE kode=? AND id_tipe_guru!=?");
             $cek->execute([$kode, $post_id]);
             if ($cek->fetch()) {
-                $msg = '⚠️ Kode tipe sudah digunakan oleh tipe lain!';
-            } else {
-                $pdo->prepare("UPDATE tipe_guru SET kode=?,label=?,urutan=? WHERE id_tipe_guru=?")->execute([$kode,$label,$urutan,$post_id]);
-                unset($GLOBALS['_cache_tipe_guru']);
                 session_write_close();
-                header('Location: guru.php?msg=' . urlencode('Tipe guru berhasil diperbarui!') . '&tab=tipe');
+                header('Location: guru.php?msg=' . urlencode('⚠️ Kode tipe sudah digunakan oleh tipe lain!') . '&tab=tipe');
                 exit;
             }
+            $pdo->prepare("UPDATE tipe_guru SET kode=?,label=?,urutan=? WHERE id_tipe_guru=?")->execute([$kode, $label, $urutan, $post_id]);
+            unset($GLOBALS['_cache_tipe_guru']);
+            session_write_close();
+            header('Location: guru.php?msg=' . urlencode('Tipe guru berhasil diperbarui!') . '&tab=tipe');
+            exit;
+
         } else {
-            $cek = $pdo->prepare("SELECT id FROM tipe_guru WHERE kode=?");
+            // Cek apakah kode sudah ada (gunakan id_tipe_guru, bukan id)
+            $cek = $pdo->prepare("SELECT id_tipe_guru FROM tipe_guru WHERE kode=?");
             $cek->execute([$kode]);
             if ($cek->fetch()) {
-                $msg = '⚠️ Kode tipe sudah ada! Gunakan kode yang berbeda.';
-            } else {
-                $pdo->prepare("INSERT INTO tipe_guru (kode,label,urutan) VALUES (?,?,?)")->execute([$kode,$label,$urutan]);
-                unset($GLOBALS['_cache_tipe_guru']);
                 session_write_close();
-                header('Location: guru.php?msg=' . urlencode('Tipe guru baru berhasil ditambahkan!') . '&tab=tipe');
+                header('Location: guru.php?msg=' . urlencode('⚠️ Kode tipe sudah ada! Gunakan kode yang berbeda.') . '&tab=tipe');
                 exit;
             }
+            $pdo->prepare("INSERT INTO tipe_guru (kode,label,urutan) VALUES (?,?,?)")->execute([$kode, $label, $urutan]);
+            unset($GLOBALS['_cache_tipe_guru']);
+            session_write_close();
+            header('Location: guru.php?msg=' . urlencode('Tipe guru baru berhasil ditambahkan!') . '&tab=tipe');
+            exit;
         }
+
+    } catch (PDOException $e) {
+        $errMsg = $e->getMessage();
+        error_log('[guru.php] PDOException saat simpan tipe guru: ' . $errMsg);
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('⚠️ Gagal menyimpan tipe guru: ' . $errMsg) . '&tab=tipe');
+        exit;
     }
 }
 
 // ─── Handle GET: Hapus tipe guru ─────────────────────────────────────────────
 if ($action === 'delete_tipe' && $id) {
-    $cekGuru = $pdo->prepare("SELECT COUNT(*) as n FROM guru WHERE tipe=(SELECT kode FROM tipe_guru WHERE id_tipe_guru=?)");
-    $cekGuru->execute([$id]);
-    $nGuru = $cekGuru->fetch()['n'];
+    try {
+        $cekGuru = $pdo->prepare("SELECT COUNT(*) as n FROM guru WHERE tipe=(SELECT kode FROM tipe_guru WHERE id_tipe_guru=?)");
+        $cekGuru->execute([$id]);
+        $nGuru = $cekGuru->fetch()['n'];
 
-    $cekKomp = $pdo->prepare("SELECT COUNT(*) as n FROM komponen WHERE type_guru=(SELECT kode FROM tipe_guru WHERE id_tipe_guru=?)");
-    $cekKomp->execute([$id]);
-    $nKomp = $cekKomp->fetch()['n'];
+        $cekKomp = $pdo->prepare("SELECT COUNT(*) as n FROM komponen WHERE type_guru=(SELECT kode FROM tipe_guru WHERE id_tipe_guru=?)");
+        $cekKomp->execute([$id]);
+        $nKomp = $cekKomp->fetch()['n'];
 
-    if ($nGuru > 0 || $nKomp > 0) {
-        $alasan = $nGuru > 0 ? "{$nGuru} data guru" : "{$nKomp} komponen penilaian";
+        if ($nGuru > 0 || $nKomp > 0) {
+            $alasan = $nGuru > 0 ? "{$nGuru} data guru" : "{$nKomp} komponen penilaian";
+            session_write_close();
+            header('Location: guru.php?msg=' . urlencode("⚠️ Tipe tidak dapat dihapus karena masih digunakan oleh {$alasan}!") . '&tab=tipe');
+            exit;
+        }
+
+        $pdo->prepare("DELETE FROM tipe_guru WHERE id_tipe_guru=?")->execute([$id]);
+        unset($GLOBALS['_cache_tipe_guru']);
         session_write_close();
-        header('Location: guru.php?msg=' . urlencode("⚠️ Tipe tidak dapat dihapus karena masih digunakan oleh {$alasan}!") . '&tab=tipe');
+        header('Location: guru.php?msg=' . urlencode('Tipe guru berhasil dihapus!') . '&tab=tipe');
+        exit;
+
+    } catch (PDOException $e) {
+        error_log('[guru.php] PDOException saat hapus tipe guru id=' . $id . ': ' . $e->getMessage());
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('⚠️ Gagal menghapus tipe guru: ' . $e->getMessage()) . '&tab=tipe');
         exit;
     }
-    $pdo->prepare("DELETE FROM tipe_guru WHERE id_tipe_guru=?")->execute([$id]);
-    unset($GLOBALS['_cache_tipe_guru']);
-    session_write_close();
-    header('Location: guru.php?msg=' . urlencode('Tipe guru berhasil dihapus!') . '&tab=tipe');
-    exit;
 }
 
 // ─── Handle GET: Hapus satu data guru ────────────────────────────────────────
@@ -195,14 +281,40 @@ if ($action === 'delete' && $id) {
     $oleh = $user['nama_lengkap'] ?? 'Admin';
 
     if ($dataHapus) {
-        catatHistory($pdo, 'hapus', $id, $dataHapus, $oleh);
-    }
+        try {
+            // ── DELETE guru dulu (auto-commit), history terpisah ──
+            $pdo->prepare("DELETE FROM guru WHERE id_guru=?")->execute([$id]);
+        } catch (PDOException $e) {
+            $errMsg = $e->getMessage();
+            error_log('[guru.php] PDOException saat hapus guru id=' . $id . ': ' . $errMsg);
 
-    $pdo->prepare("DELETE FROM guru WHERE id_guru=?")->execute([$id]);
-    // Simpan session sebelum redirect agar data tidak hilang
-    session_write_close();
-    header('Location: guru.php?msg=' . urlencode('Data guru berhasil dihapus!'));
-    exit;
+            if (strpos(strtolower($errMsg), 'foreign key') !== false) {
+                $errTampil = 'Guru ini masih memiliki data penilaian. Hapus data penilaiannya terlebih dahulu.';
+            } else {
+                $errTampil = 'Terjadi kesalahan database: ' . $errMsg;
+            }
+
+            session_write_close();
+            header('Location: guru.php?msg=' . urlencode('⚠️ Gagal menghapus: ' . $errTampil));
+            exit;
+        }
+
+        // catatHistory terpisah — kalau gagal, guru tetap sudah terhapus
+        try {
+            catatHistory($pdo, 'hapus', $id, $dataHapus, $oleh);
+        } catch (PDOException $eHistory) {
+            error_log('[guru.php] catatHistory hapus gagal (guru tetap terhapus): ' . $eHistory->getMessage());
+        }
+
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('Data guru berhasil dihapus!'));
+        exit;
+
+    } else {
+        session_write_close();
+        header('Location: guru.php?msg=' . urlencode('Data guru tidak ditemukan!'));
+        exit;
+    }
 }
 
 if (isset($_GET['msg'])) $msg = sanitize($_GET['msg']);
@@ -253,40 +365,357 @@ $pageTitle = 'Data Guru & GTK';
 require_once 'includes/header.php';
 ?>
 
+
 <!-- notifikasi ditangani oleh toast di footer -->
 
-<!-- Tab Navigation -->
-<div style="display:flex;gap:0;margin-bottom:24px;border-bottom:2px solid #e5e7eb;">
-    <button id="tab-data" onclick="switchTab('data')"
-        style="padding:10px 24px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--hijau);border-bottom:3px solid var(--hijau);margin-bottom:-2px;transition:all .2s;">
+<style>
+    /* ═══════════════════════════════════════════════════════════════
+       GURU PAGE — scoped styles
+       ═══════════════════════════════════════════════════════════════ */
+
+    .guru-tabs {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 24px;
+        border-bottom: 2px solid #e5e7eb;
+        overflow-x: auto;
+    }
+
+    .guru-tab {
+        padding: 10px 20px;
+        font-size: 13.5px;
+        font-weight: 600;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        color: #6b7280;
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        transition: all .15s ease;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .guru-tab:hover { color: var(--hijau); background: #f8fafc; }
+    .guru-tab.active {
+        color: var(--hijau);
+        border-bottom-color: var(--hijau);
+        background: var(--hijau-pale);
+    }
+
+    .guru-tab-badge {
+        background: #e5e7eb;
+        color: #374151;
+        font-size: 10.5px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-weight: 700;
+    }
+
+    .guru-tab.active .guru-tab-badge { background: var(--hijau); color: #fff; }
+    .guru-tab-badge.danger { background: #ef4444; color: #fff; }
+
+    /* Filter chips */
+    .filter-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .filter-chips-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+        margin-right: 4px;
+    }
+
+    .chip {
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1.5px solid #d1d5db;
+        background: #fff;
+        color: #374151;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+
+    .chip:hover { border-color: var(--hijau); color: var(--hijau); }
+    .chip.active { background: var(--hijau); border-color: var(--hijau); color: #fff; }
+    .chip-count { opacity: 0.85; font-weight: 700; }
+
+    /* Search box */
+    .guru-search {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        font-size: 12.5px;
+        color: #374151;
+        width: 200px;
+    }
+
+    .guru-search:focus-within { border-color: var(--hijau); }
+    .guru-search input {
+        border: none;
+        outline: none;
+        background: transparent;
+        flex: 1;
+        font-size: 12.5px;
+        color: #374151;
+    }
+
+    /* Stat cards */
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .stat-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-left: 4px solid;
+        border-radius: 12px;
+        padding: 14px 18px;
+        transition: transform .15s ease, box-shadow .15s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,.05);
+    }
+
+    .stat-value { font-size: 22px; font-weight: 700; line-height: 1.1; }
+    .stat-label { font-size: 11.5px; margin-top: 4px; font-weight: 500; }
+
+    .stat-green  { border-left-color: #16a34a; }
+    .stat-green  .stat-value { color: #15803d; }
+    .stat-green  .stat-label { color: #166534; }
+
+    .stat-yellow { border-left-color: #ca8a04; }
+    .stat-yellow .stat-value { color: #854d0e; }
+    .stat-yellow .stat-label { color: #92400e; }
+
+    .stat-red    { border-left-color: #dc2626; }
+    .stat-red    .stat-value { color: #b91c1c; }
+    .stat-red    .stat-label { color: #991b1b; }
+
+    .stat-blue   { border-left-color: #0284c7; }
+    .stat-blue   .stat-value { color: #0369a1; }
+    .stat-blue   .stat-label { color: #075985; }
+
+    /* Tabel */
+    .guru-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 13px;
+    }
+
+    .guru-table thead th {
+        background: #f8fafc;
+        color: #374151;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: .3px;
+        padding: 12px 14px;
+        border-bottom: 1px solid #e5e7eb;
+        white-space: nowrap;
+    }
+
+    .guru-table tbody td {
+        padding: 11px 14px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
+
+    .guru-table tbody tr { transition: background .12s ease; }
+    .guru-table tbody tr:hover { background: #fafbfc; }
+    .guru-table tbody tr:last-child td { border-bottom: none; }
+
+    /* Guru name + meta */
+    .guru-name { font-weight: 600; color: #111827; line-height: 1.3; }
+    .guru-meta {
+        display: flex;
+        gap: 10px;
+        margin-top: 3px;
+        font-size: 11px;
+        color: #9ca3af;
+        flex-wrap: wrap;
+    }
+    .guru-meta span { display: inline-flex; align-items: center; gap: 3px; }
+
+    .row-actions { display: inline-flex; gap: 6px; }
+
+    .user-avatar {
+        background: #e0f2fe;
+        color: #0369a1;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .aksi-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .aksi-tambah { background: #dcfce7; color: #15803d; }
+    .aksi-edit   { background: #fef9c3; color: #854d0e; }
+    .aksi-hapus  { background: #fee2e2; color: #b91c1c; }
+
+    .count-pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 600;
+    }
+
+    .count-pill.muted  { color: #d1d5db; font-size: 12px; padding: 0; }
+    .count-pill.blue   { background: #dbeafe; color: #1d4ed8; }
+    .count-pill.purple { background: #f3e8ff; color: #7c3aed; }
+
+    .btn-reset-all {
+        padding: 7px 14px;
+        background: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid #fca5a5;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .btn-reset-all:hover { background: #fecaca; }
+
+    .btn-icon {
+        background: #fee2e2;
+        border: none;
+        border-radius: 6px;
+        padding: 5px 9px;
+        cursor: pointer;
+        color: #b91c1c;
+        font-size: 13px;
+    }
+
+    .btn-icon:hover { background: #fecaca; }
+
+    .btn-disabled {
+        padding: 5px 10px;
+        font-size: 12px;
+        border-radius: 7px;
+        border: 1px solid #e5e7eb;
+        background: #f9fafb;
+        color: #d1d5db;
+        cursor: not-allowed;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #9ca3af;
+    }
+
+    .empty-state .emoji    { font-size: 48px; margin-bottom: 12px; }
+    .empty-state .title    { font-size: 14px; font-weight: 600; color: #374151; }
+    .empty-state .subtitle { font-size: 12px; margin-top: 4px; }
+
+    .info-footer {
+        margin-top: 16px;
+        padding: 14px 16px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 10px;
+        font-size: 12.5px;
+        color: #78350f;
+        line-height: 1.7;
+    }
+
+    .info-footer-title {
+        font-weight: 700;
+        margin-bottom: 6px;
+        font-size: 13px;
+    }
+
+    .info-footer code {
+        background: #fef3c7;
+        padding: 1px 5px;
+        border-radius: 4px;
+    }
+
+    .result-info {
+        font-size: 12px;
+        color: #6b7280;
+        margin-bottom: 10px;
+    }
+
+    @media (max-width: 640px) {
+        .guru-table { font-size: 12px; }
+        .guru-table thead th,
+        .guru-table tbody td { padding: 9px 8px; }
+        .guru-tab { padding: 8px 14px; font-size: 12px; }
+    }
+</style>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Tab Navigation
+     ═══════════════════════════════════════════════════════════════ -->
+<?php $allGuruCountGlobal = $pdo->query("SELECT COUNT(*) FROM guru")->fetchColumn(); ?>
+<div class="guru-tabs" role="tablist">
+    <button id="tab-data" onclick="switchTab('data')" class="guru-tab active">
         👥 Data Guru & GTK
+        <span class="guru-tab-badge"><?= $allGuruCountGlobal ?></span>
     </button>
-    <button id="tab-history" onclick="switchTab('history')"
-        style="padding:10px 24px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;color:#6b7280;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;">
+    <button id="tab-history" onclick="switchTab('history')" class="guru-tab">
         🕓 Riwayat Perubahan
         <?php if (count($historyList) > 0): ?>
-            <span id="history-badge" style="background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;border-radius:99px;margin-left:4px;"><?= count($historyList) ?></span>
+            <span id="history-badge" class="guru-tab-badge danger"><?= count($historyList) ?></span>
         <?php endif; ?>
     </button>
-    <button id="tab-tipe" onclick="switchTab('tipe')"
-        style="padding:10px 24px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;color:#6b7280;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;">
+    <button id="tab-tipe" onclick="switchTab('tipe')" class="guru-tab">
         🏷️ Tipe Guru
-        <span style="background:#6b7280;color:#fff;font-size:10px;padding:2px 6px;border-radius:99px;margin-left:4px;"><?= count($tipeFullList) ?></span>
+        <span class="guru-tab-badge"><?= count($tipeFullList) ?></span>
     </button>
 </div>
 
-<!-- Panel: Data Guru -->
+<!-- ═══════════════════════════════════════════════════════════════
+     PANEL: DATA GURU
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="panel-data">
     <div class="data-table-card">
-        <div class="card-header-custom">
+        <div class="card-header-custom" style="flex-wrap:wrap;gap:10px;">
             <div class="card-title-custom">Daftar Guru & GTK</div>
             <button class="btn-primary-custom" onclick="openModal()">+ Tambah Guru</button>
         </div>
 
         <?php
-        // Hitung jumlah guru per tipe untuk statistik
+        // Hitung jumlah guru per tipe
         $jumlahPerTipe = [];
-        $allGuruCount = $pdo->query("SELECT COUNT(*) FROM guru")->fetchColumn();
         foreach ($tipeList as $kode => $label) {
             $stmt = $pdo->prepare("SELECT COUNT(*) FROM guru WHERE tipe = ?");
             $stmt->execute([$kode]);
@@ -294,87 +723,90 @@ require_once 'includes/header.php';
         }
         ?>
 
-        <!-- Filter Tipe Guru -->
-        <form method="GET" action="guru.php" id="formFilterTipe" style="margin-bottom:16px;">
-            <input type="hidden" name="tab" value="data">
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-                <span style="font-size:12px;font-weight:600;color:#6b7280;">Filter Tipe:</span>
-                <button type="submit" name="filter_tipe_guru" value=""
-                    class="btn-filter-tipe <?= $filterTipeGuru === '' ? 'active' : '' ?>"
-                    style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid <?= $filterTipeGuru==='' ? 'var(--hijau)' : '#d1d5db' ?>;background:<?= $filterTipeGuru==='' ? 'var(--hijau)' : '#fff' ?>;color:<?= $filterTipeGuru==='' ? '#fff' : '#374151' ?>;cursor:pointer;">
-                    Semua <span style="opacity:0.8;">(<?= $allGuruCount ?>)</span>
+        <!-- Filter chips — client-side, instant -->
+        <div class="filter-chips">
+            <span class="filter-chips-label">Filter Tipe:</span>
+            <button type="button"
+                class="chip <?= $filterTipeGuru === '' ? 'active' : '' ?>"
+                onclick="filterByTipe(this, '')">
+                Semua <span class="chip-count">(<?= $allGuruCountGlobal ?>)</span>
+            </button>
+            <?php foreach ($tipeList as $kode => $label):
+                $isActive = $filterTipeGuru === $kode;
+                $jml = $jumlahPerTipe[$kode] ?? 0;
+            ?>
+                <button type="button"
+                    class="chip <?= $isActive ? 'active' : '' ?>"
+                    onclick="filterByTipe(this, '<?= htmlspecialchars($kode) ?>')">
+                    <?= htmlspecialchars($label) ?> <span class="chip-count">(<?= $jml ?>)</span>
                 </button>
-                <?php foreach ($tipeList as $kode => $label):
-                    $isActive = $filterTipeGuru === $kode;
-                    $jml = $jumlahPerTipe[$kode] ?? 0;
-                ?>
-                    <button type="submit" name="filter_tipe_guru" value="<?= htmlspecialchars($kode) ?>"
-                        style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid <?= $isActive ? 'var(--hijau)' : '#d1d5db' ?>;background:<?= $isActive ? 'var(--hijau)' : '#fff' ?>;color:<?= $isActive ? '#fff' : '#374151' ?>;cursor:pointer;">
-                        <?= htmlspecialchars($label) ?> <span style="opacity:0.8;">(<?= $jml ?>)</span>
-                    </button>
-                <?php endforeach; ?>
-            </div>
-        </form>
-
-        <!-- Statistik jumlah per tipe -->
-        <?php if (!empty($jumlahPerTipe)): ?>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding:10px 14px;background:#f8fafc;border-radius:10px;border:1px solid #e5e7eb;">
-            <span style="font-size:11px;color:#9ca3af;font-weight:600;align-self:center;">📊 Jumlah Guru:</span>
-            <?php foreach ($tipeList as $kode => $label): $jml = $jumlahPerTipe[$kode] ?? 0; ?>
-            <span style="font-size:11.5px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:3px 10px;color:#374151;">
-                <strong style="color:var(--hijau);"><?= $jml ?></strong> <?= htmlspecialchars($label) ?>
-            </span>
             <?php endforeach; ?>
-            <span style="font-size:11.5px;background:#e8f5ee;border:1px solid #d1fae5;border-radius:8px;padding:3px 10px;color:#1a4731;font-weight:700;">
-                Total: <?= $allGuruCount ?>
-            </span>
         </div>
-        <?php endif; ?>
 
-        <?php if ($filterTipeGuru): ?>
-        <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
-            Menampilkan <strong style="color:var(--hijau);"><?= count($guruList) ?></strong> guru tipe
-            <strong><?= htmlspecialchars($tipeList[$filterTipeGuru] ?? $filterTipeGuru) ?></strong>
+        <div class="result-info">
+            Menampilkan <strong id="guruVisibleCount" style="color:var(--hijau);"><?= count($guruList) ?></strong> guru
+            <?php if ($filterTipeGuru): ?>
+                tipe <strong><?= htmlspecialchars($tipeList[$filterTipeGuru] ?? $filterTipeGuru) ?></strong>
+            <?php endif; ?>
         </div>
-        <?php endif; ?>
 
-        <table class="table table-hover datatable" style="font-size:13px;">
-            <thead style="background:#f8fafc;">
-                <tr>
-                    <th>No</th>
-                    <th>Nama Guru</th>
-                    <th>NRG</th>
-                    <th>TMT</th>
-                    <th>Jabatan</th>
-                    <th>Tipe</th>
-                    <th>Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($guruList as $i => $g):
-                    $t = $tipeLabel[$g['tipe']] ?? ['label' => $g['tipe'], 'class' => ''];
-                ?>
+        <div style="overflow-x:auto;">
+            <table class="guru-table" id="guruTable">
+                <thead>
                     <tr>
-                        <td><?= $i + 1 ?></td>
-                        <td><strong><?= htmlspecialchars($g['nama']) ?></strong></td>
-                        <td><small><?= htmlspecialchars($g['nrg'] ?? '-') ?></small></td>
-                        <td><small><?= $g['tmt_guru'] ? date('d/m/Y', strtotime($g['tmt_guru'])) : '-' ?></small></td>
-                        <td><?= htmlspecialchars($g['jabatan'] ?? '-') ?></td>
-                        <td><span class="badge-tipe <?= htmlspecialchars($t['class']) ?>"><?= htmlspecialchars($t['label']) ?></span></td>
-                        <td>
-                            <div style="display:flex;gap:6px;">
-                                <button class="btn-primary-custom btn-sm-custom btn-edit" onclick='openEdit(<?= json_encode($g) ?>)'>Edit</button>
-                                <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDelete(<?= $g['id_guru'] ?>,'guru.php')">Hapus</button>
-                            </div>
-                        </td>
+                        <th style="width:50px;">No</th>
+                        <th>Guru</th>
+                        <th>Jabatan</th>
+                        <th style="width:130px;">Tipe</th>
+                        <th style="width:120px;">Aksi</th>
                     </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    <?php foreach ($guruList as $i => $g):
+                        $t = $tipeLabel[$g['tipe']] ?? ['label' => $g['tipe'], 'class' => ''];
+                    ?>
+                        <tr data-tipe="<?= htmlspecialchars($g['tipe']) ?>">
+                            <td style="color:#9ca3af;"><?= $i + 1 ?></td>
+                            <td>
+                                <div class="guru-name"><?= htmlspecialchars($g['nama']) ?></div>
+                                <div class="guru-meta">
+                                    <?php if (!empty($g['nrg'])): ?>
+                                        <span title="NRG">🆔 <?= htmlspecialchars($g['nrg']) ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($g['tmt_guru'])): ?>
+                                        <span title="TMT Guru">📅 <?= date('d/m/Y', strtotime($g['tmt_guru'])) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                            <td><?= htmlspecialchars($g['jabatan'] ?? '-') ?></td>
+                            <td><span class="badge-tipe <?= htmlspecialchars($t['class']) ?>"><?= htmlspecialchars($t['label']) ?></span></td>
+                            <td>
+                                <div class="row-actions">
+                                    <button class="btn-primary-custom btn-sm-custom btn-edit" onclick='openEdit(<?= json_encode($g) ?>)'>Edit</button>
+                                    <button class="btn-primary-custom btn-sm-custom btn-delete" onclick="confirmDelete(<?= $g['id_guru'] ?>,'guru.php')">Hapus</button>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+
+                    <?php if (empty($guruList)): ?>
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <div class="emoji">👥</div>
+                                <div class="title">Belum ada data guru</div>
+                                <div class="subtitle">Klik <strong>+ Tambah Guru</strong> untuk memulai.</div>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<!-- Panel: Riwayat History -->
+<!-- ═══════════════════════════════════════════════════════════════
+     PANEL: RIWAYAT
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="panel-history" style="display:none;">
     <div class="data-table-card">
         <div class="card-header-custom" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
@@ -383,116 +815,112 @@ require_once 'includes/header.php';
                 <p style="font-size:12px;color:#6b7280;margin:4px 0 0;">Catatan semua aktivitas penambahan, perubahan, dan penghapusan data guru.</p>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <select id="filterAksi" onchange="filterHistory()" style="padding:7px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:12.5px;color:#374151;background:#fff;cursor:pointer;">
+                <select id="filterAksi" onchange="filterHistory()" class="form-control-custom" style="padding:7px 12px;font-size:12.5px;">
                     <option value="">Semua Aksi</option>
                     <option value="tambah">✅ Ditambahkan</option>
                     <option value="edit">✏️ Diedit</option>
                     <option value="hapus">🗑️ Dihapus</option>
                 </select>
-                <input type="text" id="searchHistory" autocomplete="off" onkeyup="filterHistory()" placeholder="🔍 Cari nama guru..."
-                    style="padding:7px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:12.5px;width:180px;">
+                <div class="guru-search">
+                    <span>🔍</span>
+                    <input type="text" id="searchHistory" autocomplete="off" onkeyup="filterHistory()" placeholder="Cari nama guru...">
+                </div>
                 <?php if (!empty($historyList)): ?>
-                    <button onclick="confirmResetHistory()"
-                        style="padding:7px 14px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                    <button onclick="confirmResetHistory()" class="btn-reset-all">
                         🗑️ Reset Semua
                     </button>
                 <?php endif; ?>
             </div>
         </div>
 
-        <!-- Statistik ringkas -->
         <?php
-        $cTambah = count(array_filter($historyList, fn($h) => $h['aksi'] === 'tambah'));
-        $cEdit   = count(array_filter($historyList, fn($h) => $h['aksi'] === 'edit'));
-        $cHapus  = count(array_filter($historyList, fn($h) => $h['aksi'] === 'hapus'));
+        $cTambah = 0; $cEdit = 0; $cHapus = 0;
+        foreach ($historyList as $h) {
+            if ($h['aksi'] === 'tambah') $cTambah++;
+            elseif ($h['aksi'] === 'edit') $cEdit++;
+            elseif ($h['aksi'] === 'hapus') $cHapus++;
+        }
         ?>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
-            <div style="flex:1;min-width:120px;background:#dcfce7;border-radius:10px;padding:14px 18px;border-left:4px solid #16a34a;">
-                <div style="font-size:22px;font-weight:700;color:#15803d;"><?= $cTambah ?></div>
-                <div style="font-size:11.5px;color:#166534;margin-top:2px;">✅ Ditambahkan</div>
+        <div class="stat-grid">
+            <div class="stat-card stat-green">
+                <div class="stat-value"><?= $cTambah ?></div>
+                <div class="stat-label">✅ Ditambahkan</div>
             </div>
-            <div style="flex:1;min-width:120px;background:#fef9c3;border-radius:10px;padding:14px 18px;border-left:4px solid #ca8a04;">
-                <div style="font-size:22px;font-weight:700;color:#854d0e;"><?= $cEdit ?></div>
-                <div style="font-size:11.5px;color:#92400e;margin-top:2px;">✏️ Diedit</div>
+            <div class="stat-card stat-yellow">
+                <div class="stat-value"><?= $cEdit ?></div>
+                <div class="stat-label">✏️ Diedit</div>
             </div>
-            <div style="flex:1;min-width:120px;background:#fee2e2;border-radius:10px;padding:14px 18px;border-left:4px solid #dc2626;">
-                <div style="font-size:22px;font-weight:700;color:#b91c1c;"><?= $cHapus ?></div>
-                <div style="font-size:11.5px;color:#991b1b;margin-top:2px;">🗑️ Dihapus</div>
+            <div class="stat-card stat-red">
+                <div class="stat-value"><?= $cHapus ?></div>
+                <div class="stat-label">🗑️ Dihapus</div>
             </div>
-            <div style="flex:1;min-width:120px;background:#f0f9ff;border-radius:10px;padding:14px 18px;border-left:4px solid #0284c7;">
-                <div style="font-size:22px;font-weight:700;color:#0369a1;"><?= count($historyList) ?></div>
-                <div style="font-size:11.5px;color:#075985;margin-top:2px;">📋 Total Riwayat</div>
+            <div class="stat-card stat-blue">
+                <div class="stat-value"><?= count($historyList) ?></div>
+                <div class="stat-label">📋 Total Riwayat</div>
             </div>
         </div>
 
         <?php if (empty($historyList)): ?>
-            <div style="text-align:center;padding:60px 20px;color:#9ca3af;">
-                <div style="font-size:48px;margin-bottom:12px;">📋</div>
-                <div style="font-size:14px;font-weight:600;">Belum ada riwayat perubahan</div>
-                <div style="font-size:12px;margin-top:4px;">Setiap penambahan, pengeditan, atau penghapusan data guru akan tercatat di sini.</div>
+            <div class="empty-state">
+                <div class="emoji">📋</div>
+                <div class="title">Belum ada riwayat perubahan</div>
+                <div class="subtitle">Setiap penambahan, pengeditan, atau penghapusan data guru akan tercatat di sini.</div>
             </div>
         <?php else: ?>
             <div style="overflow-x:auto;">
-                <table class="table table-hover" style="font-size:12.5px;">
-                    <thead style="background:#f8fafc;">
+                <table class="guru-table">
+                    <thead>
                         <tr>
-                            <th style="width:40px;">No</th>
-                            <th style="width:115px;">Aksi</th>
-                            <th>Nama Guru</th>
+                            <th style="width:100px;">Aksi</th>
+                            <th>Guru</th>
                             <th>Jabatan</th>
                             <th style="width:95px;">Tipe</th>
                             <th>Oleh</th>
                             <th style="width:140px;">Waktu</th>
                             <th>Keterangan</th>
-                            <th style="width:50px;text-align:center;">Hapus</th>
+                            <th style="width:50px;text-align:center;">—</th>
                         </tr>
                     </thead>
                     <tbody id="historyBody">
                         <?php foreach ($historyList as $i => $h):
                             $t = $tipeLabel[$h['tipe'] ?? ''] ?? ['label' => ($h['tipe'] ?? '-'), 'class' => ''];
-                            $aksiStyle = match ($h['aksi']) {
-                                'tambah' => ['label' => '✅ Ditambah', 'bg' => '#dcfce7', 'color' => '#15803d'],
-                                'edit'   => ['label' => '✏️ Diedit',  'bg' => '#fef9c3', 'color' => '#854d0e'],
-                                'hapus'  => ['label' => '🗑️ Dihapus', 'bg' => '#fee2e2', 'color' => '#b91c1c'],
-                                default  => ['label' => $h['aksi'],   'bg' => '#f3f4f6', 'color' => '#374151'],
-                            };
+                            $aksiClass = 'aksi-tambah';
+                            $aksiLabel = '✅ Ditambah';
+                            if ($h['aksi'] === 'edit')  { $aksiClass = 'aksi-edit';  $aksiLabel = '✏️ Diedit'; }
+                            elseif ($h['aksi'] === 'hapus') { $aksiClass = 'aksi-hapus'; $aksiLabel = '🗑️ Dihapus'; }
                         ?>
                             <tr class="history-row" data-aksi="<?= $h['aksi'] ?>" data-nama="<?= strtolower(htmlspecialchars($h['nama'])) ?>">
-                                <td style="color:#9ca3af;"><?= $i + 1 ?></td>
                                 <td>
-                                    <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:<?= $aksiStyle['bg'] ?>;color:<?= $aksiStyle['color'] ?>;">
-                                        <?= $aksiStyle['label'] ?>
-                                    </span>
+                                    <span class="aksi-badge <?= $aksiClass ?>"><?= $aksiLabel ?></span>
                                 </td>
                                 <td>
-                                    <strong><?= htmlspecialchars($h['nama']) ?></strong>
-                                    <?php if ($h['nrg']): ?><br><small style="color:#9ca3af;"><?= htmlspecialchars($h['nrg']) ?></small><?php endif; ?>
+                                    <div class="guru-name" style="font-size:12.5px;"><?= htmlspecialchars($h['nama']) ?></div>
+                                    <?php if (!empty($h['nrg'])): ?>
+                                        <div class="guru-meta"><span>🆔 <?= htmlspecialchars($h['nrg']) ?></span></div>
+                                    <?php endif; ?>
                                 </td>
-                                <td><?= htmlspecialchars($h['jabatan'] ?? '-') ?></td>
+                                <td style="font-size:12px;"><?= htmlspecialchars($h['jabatan'] ?? '-') ?></td>
                                 <td>
                                     <?php if ($h['tipe']): ?>
                                         <span class="badge-tipe <?= htmlspecialchars($t['class']) ?>" style="font-size:10px;"><?= htmlspecialchars($t['label']) ?></span>
-                                        <?php else: ?>-<?php endif; ?>
+                                    <?php else: ?>-<?php endif; ?>
                                 </td>
                                 <td>
-                                    <span style="display:inline-flex;align-items:center;gap:5px;">
-                                        <span style="background:#e0f2fe;color:#0369a1;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">
-                                            <?= strtoupper(substr($h['oleh'], 0, 1)) ?>
-                                        </span>
-                                        <span><?= htmlspecialchars($h['oleh']) ?></span>
+                                    <span style="display:inline-flex;align-items:center;gap:6px;">
+                                        <span class="user-avatar"><?= strtoupper(substr($h['oleh'], 0, 1)) ?></span>
+                                        <span style="font-size:12px;"><?= htmlspecialchars($h['oleh']) ?></span>
                                     </span>
                                 </td>
-                                <td style="color:#6b7280;white-space:nowrap;">
+                                <td style="color:#6b7280;white-space:nowrap;font-size:11.5px;">
                                     <?= date('d/m/Y', strtotime($h['waktu'])) ?><br>
                                     <small style="color:#9ca3af;"><?= date('H:i:s', strtotime($h['waktu'])) ?></small>
                                 </td>
-                                <td style="font-size:11.5px;color:#6b7280;max-width:200px;word-break:break-word;">
+                                <td style="font-size:11.5px;color:#6b7280;max-width:220px;word-break:break-word;">
                                     <?= $h['keterangan'] ? htmlspecialchars($h['keterangan']) : '<span style="color:#d1d5db;">—</span>' ?>
                                 </td>
                                 <td style="text-align:center;">
                                     <button onclick="confirmDeleteHistory(<?= $h['id_guru_history'] ?>, '<?= htmlspecialchars(addslashes($h['nama'])) ?>')"
-                                        title="Hapus riwayat ini"
-                                        style="background:#fee2e2;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;color:#b91c1c;font-size:13px;">
+                                        title="Hapus riwayat ini" class="btn-icon">
                                         🗑️
                                     </button>
                                 </td>
@@ -508,52 +936,52 @@ require_once 'includes/header.php';
     </div>
 </div>
 
-<!-- Panel: Tipe Guru -->
+<!-- ═══════════════════════════════════════════════════════════════
+     PANEL: TIPE GURU
+     ═══════════════════════════════════════════════════════════════ -->
 <div id="panel-tipe" style="display:none;">
     <div class="data-table-card">
-        <div class="card-header-custom">
+        <div class="card-header-custom" style="flex-wrap:wrap;gap:10px;">
             <div>
                 <div class="card-title-custom">Manajemen Tipe Guru</div>
                 <p style="font-size:12.5px;color:#6b7280;margin:4px 0 0;">
-                    Kelola kategori tipe guru yang dipakai di seluruh modul (Data Guru, Komponen Penilaian, Penilaian Kinerja).
+                    Kelola kategori tipe guru yang dipakai di seluruh modul.
                 </p>
             </div>
             <button class="btn-primary-custom" onclick="openModalTipe()">+ Tambah Tipe</button>
         </div>
 
-        <!-- Ringkasan -->
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
-            <div style="flex:1;min-width:130px;background:#f0fdf4;border-radius:10px;padding:14px 18px;border-left:4px solid #16a34a;">
-                <div style="font-size:22px;font-weight:700;color:#15803d;"><?= count($tipeFullList) ?></div>
-                <div style="font-size:11.5px;color:#166534;margin-top:2px;">🏷️ Total Tipe</div>
+        <div class="stat-grid">
+            <div class="stat-card stat-green">
+                <div class="stat-value"><?= count($tipeFullList) ?></div>
+                <div class="stat-label">🏷️ Total Tipe</div>
             </div>
-            <div style="flex:1;min-width:130px;background:#eff6ff;border-radius:10px;padding:14px 18px;border-left:4px solid #3b82f6;">
-                <div style="font-size:22px;font-weight:700;color:#1d4ed8;"><?= array_sum(array_column($tipeFullList, 'jumlah_guru')) ?></div>
-                <div style="font-size:11.5px;color:#1e40af;margin-top:2px;">👥 Total Guru</div>
+            <div class="stat-card stat-blue">
+                <div class="stat-value"><?= array_sum(array_column($tipeFullList, 'jumlah_guru')) ?></div>
+                <div class="stat-label">👥 Total Guru</div>
             </div>
         </div>
 
-        <!-- Tabel Tipe -->
         <div style="overflow-x:auto;">
-            <table class="table table-hover" style="font-size:13px;">
-                <thead style="background:#f8fafc;">
+            <table class="guru-table">
+                <thead>
                     <tr>
                         <th style="width:50px;">No</th>
-                        <th>Kode</th>
-                        <th>Label</th>
+                        <th>Tipe</th>
+                        <th style="width:130px;">Kode</th>
                         <th style="width:80px;text-align:center;">Urutan</th>
-                        <th style="width:110px;text-align:center;">Jml Guru</th>
-                        <th style="width:130px;text-align:center;">Jml Komponen</th>
-                        <th style="width:150px;">Preview Badge</th>
+                        <th style="width:100px;text-align:center;">Guru</th>
+                        <th style="width:120px;text-align:center;">Komponen</th>
                         <th style="width:130px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($tipeFullList)): ?>
                         <tr>
-                            <td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;">
-                                <div style="font-size:36px;margin-bottom:8px;">🏷️</div>
-                                Belum ada tipe guru. Klik <strong>+ Tambah Tipe</strong> untuk memulai.
+                            <td colspan="7" class="empty-state">
+                                <div class="emoji">🏷️</div>
+                                <div class="title">Belum ada tipe guru</div>
+                                <div class="subtitle">Klik <strong>+ Tambah Tipe</strong> untuk memulai.</div>
                             </td>
                         </tr>
                     <?php else: ?>
@@ -573,11 +1001,15 @@ require_once 'includes/header.php';
                             <tr>
                                 <td style="color:#9ca3af;"><?= $i + 1 ?></td>
                                 <td>
-                                    <code style="background:#f3f4f6;padding:3px 8px;border-radius:6px;font-size:12px;color:#374151;">
+                                    <span style="display:inline-block;padding:4px 12px;border-radius:999px;font-size:11.5px;font-weight:600;background:<?= $bc['bg'] ?>;color:<?= $bc['color'] ?>;border:1px solid <?= $bc['border'] ?>;">
+                                        <?= htmlspecialchars($t['label']) ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <code style="background:#f3f4f6;padding:3px 8px;border-radius:6px;font-size:11.5px;color:#374151;">
                                         <?= htmlspecialchars($t['kode']) ?>
                                     </code>
                                 </td>
-                                <td><strong><?= htmlspecialchars($t['label']) ?></strong></td>
                                 <td style="text-align:center;">
                                     <span style="background:#f3f4f6;padding:3px 10px;border-radius:6px;font-size:12px;">
                                         <?= $t['urutan'] ?>
@@ -585,30 +1017,20 @@ require_once 'includes/header.php';
                                 </td>
                                 <td style="text-align:center;">
                                     <?php if ($t['jumlah_guru'] > 0): ?>
-                                        <span style="background:#dbeafe;color:#1d4ed8;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">
-                                            <?= $t['jumlah_guru'] ?> guru
-                                        </span>
+                                        <span class="count-pill blue"><?= $t['jumlah_guru'] ?></span>
                                     <?php else: ?>
-                                        <span style="color:#d1d5db;font-size:12px;">—</span>
+                                        <span class="count-pill muted">—</span>
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align:center;">
                                     <?php if ($t['jumlah_komponen'] > 0): ?>
-                                        <span style="background:#f3e8ff;color:#7c3aed;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">
-                                            <?= $t['jumlah_komponen'] ?> komponen
-                                        </span>
+                                        <span class="count-pill purple"><?= $t['jumlah_komponen'] ?></span>
                                     <?php else: ?>
-                                        <span style="color:#d1d5db;font-size:12px;">—</span>
+                                        <span class="count-pill muted">—</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:11.5px;font-weight:600;
-                                        background:<?= $bc['bg'] ?>;color:<?= $bc['color'] ?>;border:1px solid <?= $bc['border'] ?>;">
-                                        <?= htmlspecialchars($t['label']) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div style="display:flex;gap:6px;">
+                                    <div class="row-actions">
                                         <button class="btn-primary-custom btn-sm-custom btn-edit"
                                             onclick='openEditTipe(<?= json_encode($t) ?>)'>
                                             Edit
@@ -619,8 +1041,7 @@ require_once 'includes/header.php';
                                                 Hapus
                                             </button>
                                         <?php else: ?>
-                                            <button disabled title="Masih digunakan, tidak bisa dihapus"
-                                                style="padding:5px 10px;font-size:12px;border-radius:7px;border:1px solid #e5e7eb;background:#f9fafb;color:#d1d5db;cursor:not-allowed;">
+                                            <button disabled title="Masih digunakan, tidak bisa dihapus" class="btn-disabled">
                                                 Hapus
                                             </button>
                                         <?php endif; ?>
@@ -633,17 +1054,42 @@ require_once 'includes/header.php';
             </table>
         </div>
 
-        <!-- Keterangan -->
-        <div style="margin-top:16px;padding:14px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;font-size:12.5px;color:#78350f;line-height:1.8;">
-            <div style="font-weight:700;margin-bottom:6px;font-size:13px;">ℹ️ Catatan Penting</div>
+        <div class="info-footer">
+            <div class="info-footer-title">ℹ️ Catatan Penting</div>
             <div style="display:flex;flex-direction:column;gap:4px;">
                 <div>🔒 Tipe yang sudah dipakai guru atau komponen penilaian <strong>tidak dapat dihapus</strong>.</div>
-                <div>🔤 <strong>Kode</strong> hanya boleh mengandung huruf kecil, angka, dan underscore — contoh: <code style="background:#fef3c7;padding:1px 5px;border-radius:4px;">guru_kelas</code>.</div>
-                <div>🔢 <strong>Urutan</strong> ditetapkan otomatis saat menambah; dapat diubah melalui tombol <em>Edit</em>. Angka kecil = tampil lebih dulu.</div>
+                <div>🔤 <strong>Kode</strong> hanya boleh mengandung huruf kecil, angka, dan underscore — contoh: <code>guru_kelas</code>.</div>
+                <div>🔢 <strong>Urutan</strong> ditetapkan otomatis; dapat diubah lewat <em>Edit</em>. Angka kecil = tampil lebih dulu.</div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Filter Tipe client-side (instan) -->
+<script>
+    function filterByTipe(btn, tipe) {
+        document.querySelectorAll('#panel-data .chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+
+        const rows = document.querySelectorAll('#guruTable tbody tr');
+        let no = 1;
+        let visible = 0;
+        rows.forEach(tr => {
+            if (!tr.dataset.tipe) return;
+            const show = !tipe || tr.dataset.tipe === tipe;
+            tr.style.display = show ? '' : 'none';
+            if (show) {
+                const numCell = tr.querySelector('td:first-child');
+                if (numCell) numCell.textContent = no++;
+                visible++;
+            }
+        });
+
+        const info = document.getElementById('guruVisibleCount');
+        if (info) info.textContent = visible;
+    }
+</script>
+
 
 <!-- Modal Tambah/Edit Tipe Guru -->
 <div class="modal fade" id="tipeModal" tabindex="-1">
@@ -783,18 +1229,13 @@ require_once 'includes/header.php';
             if (!btn || !panel) return;
             const isActive = t === tab;
             panel.style.display = isActive ? '' : 'none';
-            btn.style.color = isActive ? 'var(--hijau)' : '#6b7280';
-            btn.style.borderBottom = isActive ? '3px solid var(--hijau)' : '3px solid transparent';
+            btn.classList.toggle('active', isActive);
         });
 
         if (tab === 'history') {
             const badge = document.getElementById('history-badge');
             if (badge) badge.style.display = 'none';
             localStorage.setItem('history_seen', '<?= count($historyList) ?>');
-        }
-        if (tab === 'tipe') {
-            const tipeBadge = document.querySelector('#tab-tipe span');
-            if (tipeBadge) tipeBadge.style.background = 'var(--hijau)';
         }
     }
 
@@ -834,7 +1275,7 @@ require_once 'includes/header.php';
     function openEdit(data) {
         document.getElementById('modalTitle').textContent = 'Edit Data Guru';
         document.getElementById('formAction').value = 'edit';
-        document.getElementById('formId').value = data.id;
+        document.getElementById('formId').value = data.id_guru;
         document.getElementById('f_nama').value = data.nama || '';
         document.getElementById('f_nrg').value = data.nrg || '';
         document.getElementById('f_tmt').value = data.tmt_guru || '';
@@ -882,7 +1323,7 @@ require_once 'includes/header.php';
     function openEditTipe(data) {
         document.getElementById('tipeModalTitle').textContent = 'Edit Tipe Guru';
         document.getElementById('tipeFormAction').value = 'edit';
-        document.getElementById('tipeFormId').value = data.id;
+        document.getElementById('tipeFormId').value = data.id_tipe_guru;
         document.getElementById('ft_kode').value = data.kode || '';
         document.getElementById('ft_kode').readOnly = (data.jumlah_guru > 0 || data.jumlah_komponen > 0);
         document.getElementById('ft_label').value = data.label || '';

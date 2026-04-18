@@ -31,9 +31,14 @@ if ($action === 'delete' && $id) {
 // ================================================================
 // HAPUS ISI (indikator + item dari custom penilaian)
 // ================================================================
-if ($action === 'delete_isi' && $id) {
+if ($action === 'delete_isi') {
     $idKomponen = (int)($_GET['id_komponen'] ?? 0);
-    $pdo->prepare("DELETE FROM isi WHERE id_isi = ?")->execute([$id]);
+    $idItem     = (int)($_GET['id_item']     ?? 0);
+    $namaInd    = $_GET['nama_indikator']   ?? '';
+    if ($idKomponen && $idItem && $namaInd !== '') {
+        $pdo->prepare("DELETE FROM isi WHERE id_komponen = ? AND id_item = ? AND nama_indikator = ?")
+            ->execute([$idKomponen, $idItem, $namaInd]);
+    }
     session_write_close();
     header('Location: custom_penilaian.php?action=edit&id=' . $idKomponen . '&msg=' . urlencode('Item berhasil dihapus dari indikator!'));
     exit;
@@ -142,15 +147,31 @@ if ($filterTipe) {
 $whereSQL = $filterWhere ? 'WHERE ' . implode(' AND ', $filterWhere) : '';
 
 $stmtKomp = $pdo->prepare("
-    SELECT k.*, COUNT(i.id_isi) as total_isi
+    SELECT
+        k.*,
+        COUNT(DISTINCT i.id_item)          AS total_item,
+        COUNT(DISTINCT i.nama_indikator)   AS total_indikator,
+        (SELECT COUNT(DISTINCT p.id_guru) FROM penilaian p WHERE p.id_komponen = k.id_komponen) AS total_guru_dinilai,
+        (SELECT COUNT(g.id_guru) FROM guru g WHERE g.tipe = k.type_guru) AS total_guru_tipe
     FROM komponen k
     LEFT JOIN isi i ON k.id_komponen = i.id_komponen
     $whereSQL
     GROUP BY k.id_komponen
-    ORDER BY k.id_komponen DESC
+    ORDER BY k.ta_komponen DESC, k.type_guru ASC
 ");
 $stmtKomp->execute($filterParams);
 $komponenList = $stmtKomp->fetchAll();
+
+// Kelompokkan per Tahun Ajaran untuk tampilan accordion
+$komponenByTA = [];
+foreach ($komponenList as $k) {
+    $komponenByTA[$k['ta_komponen']][] = $k;
+}
+
+// Statistik ringkasan
+$statsTotalTA    = count($komponenByTA);
+$statsTotalSkema = count($komponenList);
+$statsTotalItem  = array_sum(array_column($komponenList, 'total_item'));
 
 // Daftar indikator yang tersedia — hardcoded dari konstanta (tidak lagi dari tabel indikator)
 $indikatorByTipe = null; // tidak dipakai lagi
@@ -285,7 +306,7 @@ require_once 'includes/header.php';
                                     <td style="padding:9px 14px;font-weight:600;color:<?= $ic[1] ?>;"><?= htmlspecialchars($it['nomor_item']) ?></td>
                                     <td style="padding:9px 14px;color:#374151;word-break:break-word;overflow-wrap:anywhere;white-space:normal;"><?= htmlspecialchars($it['nama_item']) ?></td>
                                     <td style="padding:9px 14px;text-align:center;">
-                                        <button onclick="hapusIsi(<?= $it['id_isi'] ?>, <?= $id ?>)"
+                                        <button onclick="hapusIsi(<?= (int)$it['id_item'] ?>, <?= $id ?>, '<?= htmlspecialchars(addslashes($it['nama_indikator']), ENT_QUOTES) ?>')"
                                             class="btn-primary-custom btn-sm-custom btn-delete">🗑</button>
                                     </td>
                                 </tr>
@@ -444,8 +465,9 @@ require_once 'includes/header.php';
                         ✕ Reset Filter
                     </a>
                 <?php endif; ?>
-                <span style="font-size:12px;color:#9ca3af;margin-left:auto;">
-                    Menampilkan <strong style="color:#1a4731;"><?= count($komponenList) ?></strong> pertanyaan penilaian
+                <span style="font-size:12px;color:#9ca3af;margin-left:auto;display:flex;align-items:center;gap:10px;">
+                    <button type="button" onclick="toggleAllAccordion(true)" style="background:none;border:none;color:#1a4731;font-weight:600;cursor:pointer;padding:4px 8px;font-size:12px;">⬇ Buka Semua</button>
+                    <button type="button" onclick="toggleAllAccordion(false)" style="background:none;border:none;color:#6b7280;font-weight:600;cursor:pointer;padding:4px 8px;font-size:12px;">⬆ Tutup Semua</button>
                 </span>
             </form>
 
@@ -456,30 +478,101 @@ require_once 'includes/header.php';
                     <a href="custom_penilaian.php" style="font-size:13px;color:#1a4731;font-weight:600;">Reset Filter</a>
                 </div>
             <?php else: ?>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
-                    <?php foreach ($komponenList as $k): ?>
-                        <div style="border:1.5px solid #e5e7eb;border-radius:14px;overflow:hidden;background:#fff;">
-                            <div style="background:linear-gradient(135deg,#e8f5ee,#f0faf4);border-bottom:1px solid #d1fae5;padding:16px 18px;">
-                                <div style="font-size:16px;font-weight:700;color:#1a4731;margin-bottom:6px;">
-                                    📅 <?= htmlspecialchars($k['ta_komponen']) ?>
+                <!-- Accordion per Tahun Ajaran — TA terbaru auto-expand -->
+                <?php
+                // TA terbaru = yang pertama di $komponenByTA (sudah diurut DESC)
+                $firstTA = array_key_first($komponenByTA);
+                ?>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <?php foreach ($komponenByTA as $taLabel => $itemsInTA): ?>
+                        <?php
+                        $isOpen      = ($taLabel === $firstTA);
+                        $totalItemTA = array_sum(array_column($itemsInTA, 'total_item'));
+                        $accId       = 'acc_' . md5($taLabel);
+                        ?>
+                        <div class="ta-accordion" data-acc-id="<?= $accId ?>"
+                            style="border:1.5px solid #e5e7eb;border-radius:14px;overflow:hidden;background:#fff;">
+                            <!-- Accordion Header -->
+                            <button type="button" onclick="toggleAccordion('<?= $accId ?>')"
+                                style="width:100%;background:linear-gradient(135deg,#e8f5ee,#f0faf4);border:none;padding:16px 20px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;">
+                                <div style="display:flex;align-items:center;gap:14px;flex:1;min-width:0;">
+                                    <span class="acc-caret" style="font-size:14px;color:#1a4731;transition:transform .2s;<?= $isOpen ? 'transform:rotate(90deg);' : '' ?>">▶</span>
+                                    <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+                                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                            <span style="font-size:16px;font-weight:700;color:#1a4731;">📅 <?= htmlspecialchars($taLabel) ?></span>
+                                            <?php if ($taLabel === $firstTA): ?>
+                                                <span style="background:#059669;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;letter-spacing:.3px;">TERBARU</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div style="font-size:12px;color:#6b7280;">
+                                            <?= count($itemsInTA) ?> skema · <?= $totalItemTA ?> item penilaian
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style="font-size:13px;color:#374151;font-weight:600;">
-                                    👤 <?= htmlspecialchars($tipeLabels[$k['type_guru']] ?? $k['type_guru']) ?>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+                                    <?php foreach ($itemsInTA as $k): ?>
+                                        <span style="background:#fff;border:1px solid #d1fae5;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;color:#065f46;">
+                                            <?= htmlspecialchars($tipeLabels[$k['type_guru']] ?? $k['type_guru']) ?>
+                                        </span>
+                                    <?php endforeach; ?>
                                 </div>
-                            </div>
-                            <div style="padding:14px 18px;">
-                                <div style="font-size:12px;color:#6b7280;margin-bottom:14px;">
-                                    <span style="background:#f3f4f6;padding:3px 10px;border-radius:12px;font-weight:600;">
-                                        📋 <?= (int)$k['total_isi'] ?> item tersimpan
-                                    </span>
-                                </div>
-                                <div style="display:flex;gap:8px;">
-                                    <a href="custom_penilaian.php?action=edit&id=<?= $k['id_komponen'] ?>"
-                                        class="btn-primary-custom btn-sm-custom btn-edit" style="flex:1;text-align:center;text-decoration:none;">
-                                        ✏️ Kelola
-                                    </a>
-                                    <button onclick="hapusKomponen(<?= $k['id_komponen'] ?>)"
-                                        class="btn-primary-custom btn-sm-custom btn-delete">🗑</button>
+                            </button>
+
+                            <!-- Accordion Body -->
+                            <div class="acc-body" style="padding:16px 20px;background:#fff;<?= $isOpen ? '' : 'display:none;' ?>">
+                                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">
+                                    <?php foreach ($itemsInTA as $k):
+                                        $isDraft   = ((int)$k['total_item'] === 0);
+                                        $pctDinilai = ((int)$k['total_guru_tipe'] > 0)
+                                            ? round(((int)$k['total_guru_dinilai'] / (int)$k['total_guru_tipe']) * 100)
+                                            : 0;
+                                    ?>
+                                        <div style="border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fafafa;">
+                                            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
+                                                <div style="font-size:14px;font-weight:700;color:#374151;">
+                                                    👤 <?= htmlspecialchars($tipeLabels[$k['type_guru']] ?? $k['type_guru']) ?>
+                                                </div>
+                                                <?php if ($isDraft): ?>
+                                                    <span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;">DRAFT</span>
+                                                <?php else: ?>
+                                                    <span style="background:#d1fae5;color:#065f46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;">SIAP</span>
+                                                <?php endif; ?>
+                                            </div>
+
+                                            <!-- Stats ringkas -->
+                                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                                                <span style="background:#f3f4f6;color:#374151;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;">
+                                                    📊 <?= (int)$k['total_indikator'] ?> indikator
+                                                </span>
+                                                <span style="background:#f3f4f6;color:#374151;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;">
+                                                    📋 <?= (int)$k['total_item'] ?> item
+                                                </span>
+                                            </div>
+
+                                            <!-- Progress penilaian -->
+                                            <?php if ((int)$k['total_guru_tipe'] > 0): ?>
+                                                <div style="margin-bottom:12px;">
+                                                    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;color:#6b7280;margin-bottom:4px;">
+                                                        <span>Progres penilaian</span>
+                                                        <span><strong style="color:#1a4731;"><?= (int)$k['total_guru_dinilai'] ?></strong>/<?= (int)$k['total_guru_tipe'] ?> guru</span>
+                                                    </div>
+                                                    <div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
+                                                        <div style="height:100%;width:<?= $pctDinilai ?>%;background:linear-gradient(90deg,#059669,#10b981);border-radius:3px;"></div>
+                                                    </div>
+                                                </div>
+                                            <?php endif; ?>
+
+                                            <!-- Tombol aksi -->
+                                            <div style="display:flex;gap:8px;">
+                                                <a href="custom_penilaian.php?action=edit&id=<?= $k['id_komponen'] ?>"
+                                                    class="btn-primary-custom btn-sm-custom btn-edit" style="flex:1;text-align:center;text-decoration:none;">
+                                                    ✏️ Kelola
+                                                </a>
+                                                <button onclick="hapusKomponen(<?= $k['id_komponen'] ?>)"
+                                                    class="btn-primary-custom btn-sm-custom btn-delete">🗑</button>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                         </div>
@@ -499,30 +592,31 @@ require_once 'includes/header.php';
                 </div>
                 <button onclick="closeModalBaru()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#9ca3af;padding:4px;border-radius:6px;line-height:1;transition:all .15s;" onmouseover="this.style.background='#f3f4f6';this.style.color='#374151'" onmouseout="this.style.background='none';this.style.color='#9ca3af'">×</button>
             </div>
-            <form method="POST" style="padding:24px;" autocomplete="off" id="formBaru" onsubmit="prepareTA(event)">
+            <form method="POST" style="padding:24px;" autocomplete="off" id="formBaru">
                 <input type="hidden" name="save_komponen" value="1">
                 <input type="hidden" name="ta_komponen" id="hiddenTA">
-
                 <div style="margin-bottom:18px;">
-                    <label class="form-label-custom">Tahun Ajaran</label>
-                    <select id="selectTA" class="form-control-custom" required onchange="handleTAChange(this.value)">
-                        <option value="">-- Pilih Tahun Ajaran --</option>
-                        <?php
-                        $currentYear = (int)date('Y');
-                        for ($y = $currentYear - 3; $y <= $currentYear + 1; $y++):
-                            $next = $y + 1;
-                        ?>
-                            <option value="<?= $y ?>/<?= $next ?> Ganjil"><?= $y ?>/<?= $next ?> Ganjil</option>
-                            <option value="<?= $y ?>/<?= $next ?> Genap"><?= $y ?>/<?= $next ?> Genap</option>
-                        <?php endfor; ?>
-                        <option value="__custom__">✏️ Ketik manual...</option>
-                    </select>
-                    <input type="text" id="inputTAManual" class="form-control-custom"
-                        placeholder="cth: 2024/2025 Semester 1"
-                        style="display:none;margin-top:8px;"
-                        oninput="document.getElementById('hiddenTA').value=this.value">
+                    <label class="form-label-custom">Tahun Ajaran <span style="color:#dc2626;">*</span></label>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <select id="taDari" class="form-control-custom" required onchange="updateHiddenTA()">
+                            <?php
+                            $currentYear = (int)date('Y');
+                            for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++):
+                            ?>
+                                <option value="<?= $y ?>" <?= $y == $currentYear ? 'selected' : '' ?>><?= $y ?></option>
+                            <?php endfor; ?>
+                        </select>
+                        <span style="font-weight:600;color:#6b7280;white-space:nowrap;">s/d</span>
+                        <select id="taSampai" class="form-control-custom" required onchange="updateHiddenTA()">
+                            <?php
+                            for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++):
+                            ?>
+                                <option value="<?= $y ?>" <?= $y == $currentYear + 1 ? 'selected' : '' ?>><?= $y ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
                     <small style="color:#9ca3af;font-size:11px;margin-top:4px;display:block;">
-                        Pilih dari daftar, atau pilih "Ketik manual" untuk format bebas.
+                        Pilih tahun awal dan tahun akhir periode penilaian.
                     </small>
                 </div>
 
@@ -585,8 +679,9 @@ require_once 'includes/header.php';
         if (!m) return;
         m.classList.add('active');
         setTimeout(function() {
-            var el = document.getElementById('selectTA');
+            var el = document.getElementById('inputTA');
             if (el) el.focus();
+            updateHiddenTA();
         }, 100);
     }
 
@@ -595,38 +690,10 @@ require_once 'includes/header.php';
         if (m) m.classList.remove('active');
     }
 
-    function handleTAChange(val) {
-        const manual = document.getElementById('inputTAManual');
-        const hidden = document.getElementById('hiddenTA');
-        if (val === '__custom__') {
-            manual.style.display = '';
-            manual.required = true;
-            hidden.value = '';
-            manual.focus();
-        } else {
-            manual.style.display = 'none';
-            manual.required = false;
-            hidden.value = val;
-        }
-    }
-
-    function prepareTA(e) {
-        const sel = document.getElementById('selectTA');
-        const manual = document.getElementById('inputTAManual');
-        const hidden = document.getElementById('hiddenTA');
-        if (sel.value === '__custom__') {
-            if (!manual.value.trim()) {
-                e.preventDefault();
-                manual.focus();
-                return;
-            }
-            hidden.value = manual.value.trim();
-        } else if (sel.value) {
-            hidden.value = sel.value;
-        } else {
-            e.preventDefault();
-            sel.focus();
-        }
+    function updateHiddenTA() {
+        const dari = document.getElementById('taDari').value;
+        const sampai = document.getElementById('taSampai').value;
+        document.getElementById('hiddenTA').value = dari + '/' + sampai;
     }
 
     // === Modal Indikator ===
@@ -720,14 +787,39 @@ require_once 'includes/header.php';
         });
     <?php endif; ?>
 
-    function hapusIsi(id, idKomponen) {
+    function hapusIsi(idItem, idKomponen, namaInd) {
         if (!confirm('Hapus item ini dari indikator?')) return;
-        window.location.href = 'custom_penilaian.php?action=delete_isi&id=' + id + '&id_komponen=' + idKomponen;
+        var url = 'custom_penilaian.php?action=delete_isi'
+                + '&id_komponen=' + idKomponen
+                + '&id_item=' + idItem
+                + '&nama_indikator=' + encodeURIComponent(namaInd);
+        window.location.href = url;
     }
 
     function hapusKomponen(id) {
         if (!confirm('Hapus seluruh custom penilaian ini beserta semua indikator dan item-nya?')) return;
         window.location.href = 'custom_penilaian.php?action=delete&id=' + id;
+    }
+
+    // ── Accordion grup Tahun Ajaran ─────────────────────────────
+    function toggleAccordion(accId) {
+        const wrap = document.querySelector('[data-acc-id="' + accId + '"]');
+        if (!wrap) return;
+        const body  = wrap.querySelector('.acc-body');
+        const caret = wrap.querySelector('.acc-caret');
+        if (!body) return;
+        const isHidden = body.style.display === 'none';
+        body.style.display    = isHidden ? 'block' : 'none';
+        if (caret) caret.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+
+    function toggleAllAccordion(open) {
+        document.querySelectorAll('.ta-accordion').forEach(wrap => {
+            const body  = wrap.querySelector('.acc-body');
+            const caret = wrap.querySelector('.acc-caret');
+            if (body)  body.style.display    = open ? 'block' : 'none';
+            if (caret) caret.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
+        });
     }
 </script>
 
