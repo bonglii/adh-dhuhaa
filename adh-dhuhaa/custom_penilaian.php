@@ -146,6 +146,9 @@ if ($filterTipe) {
 }
 $whereSQL = $filterWhere ? 'WHERE ' . implode(' AND ', $filterWhere) : '';
 
+// ─── Query utama: daftar komponen + statistik per komponen ──────────────────
+// Subquery total_guru_dinilai: berapa guru unik yang sudah pernah dinilai pakai komponen ini
+// Subquery total_guru_tipe: total guru dengan tipe yang sama (untuk hitung progres %)
 $stmtKomp = $pdo->prepare("
     SELECT
         k.*,
@@ -789,10 +792,10 @@ require_once 'includes/header.php';
 
     function hapusIsi(idItem, idKomponen, namaInd) {
         if (!confirm('Hapus item ini dari indikator?')) return;
-        var url = 'custom_penilaian.php?action=delete_isi'
-                + '&id_komponen=' + idKomponen
-                + '&id_item=' + idItem
-                + '&nama_indikator=' + encodeURIComponent(namaInd);
+        var url = 'custom_penilaian.php?action=delete_isi' +
+            '&id_komponen=' + idKomponen +
+            '&id_item=' + idItem +
+            '&nama_indikator=' + encodeURIComponent(namaInd);
         window.location.href = url;
     }
 
@@ -805,19 +808,19 @@ require_once 'includes/header.php';
     function toggleAccordion(accId) {
         const wrap = document.querySelector('[data-acc-id="' + accId + '"]');
         if (!wrap) return;
-        const body  = wrap.querySelector('.acc-body');
+        const body = wrap.querySelector('.acc-body');
         const caret = wrap.querySelector('.acc-caret');
         if (!body) return;
         const isHidden = body.style.display === 'none';
-        body.style.display    = isHidden ? 'block' : 'none';
+        body.style.display = isHidden ? 'block' : 'none';
         if (caret) caret.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
     }
 
     function toggleAllAccordion(open) {
         document.querySelectorAll('.ta-accordion').forEach(wrap => {
-            const body  = wrap.querySelector('.acc-body');
+            const body = wrap.querySelector('.acc-body');
             const caret = wrap.querySelector('.acc-caret');
-            if (body)  body.style.display    = open ? 'block' : 'none';
+            if (body) body.style.display = open ? 'block' : 'none';
             if (caret) caret.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
         });
     }

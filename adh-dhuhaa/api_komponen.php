@@ -6,12 +6,17 @@
 require_once 'includes/config.php';
 requireLogin();
 
+// ─── Validasi parameter input ─────────────────────────────────────────────────
+// Kalau tipe kosong atau tidak terdaftar di tabel tipe_guru → balikan array kosong
 $tipe = sanitize($_GET['tipe'] ?? '');
 
 if (!$tipe || !isValidTipe($pdo, $tipe)) {
     jsonResponse([]);
 }
 
+// ─── Query: gabungkan isi → item → komponen untuk dapat semua item per tipe ──
+// GROUP BY id_item+nama_indikator mencegah duplikat kalau item dipakai di
+// banyak komponen (banyak tahun ajaran) untuk tipe guru yang sama.
 $stmt = $pdo->prepare("
     SELECT
         it.id_item,
@@ -27,4 +32,5 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$tipe]);
 
+// Balikan hasil sebagai JSON (jsonResponse di config.php sudah handle exit)
 jsonResponse($stmt->fetchAll());

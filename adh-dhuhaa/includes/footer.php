@@ -59,11 +59,16 @@ function showToast(msg, type) {
     const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
     const icon  = icons[type] || icons.success;
 
+    // Escape msg untuk cegah XSS (msg bisa dari URL query ?msg=...)
+    const safeMsg = String(msg).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
+    });
+
     const toast = document.createElement('div');
     toast.className = 'toast-notif toast-' + type;
     toast.innerHTML =
         '<span class="toast-icon">' + icon + '</span>' +
-        '<span class="toast-msg">' + msg + '</span>' +
+        '<span class="toast-msg">' + safeMsg + '</span>' +
         '<button class="toast-close" onclick="this.parentElement.remove()">✕</button>';
 
     document.getElementById('toast-container').appendChild(toast);

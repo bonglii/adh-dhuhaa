@@ -233,6 +233,17 @@ if ($action === 'edit' && $id) {
     foreach ($rows->fetchAll() as $r) $editDetail[$r['id_item']] = $r['nilai'];
 }
 
+/**
+ * renderKomponenHtml — Render HTML form penilaian server-side.
+ *
+ * Dipakai di mode edit (ketika penilaian sudah ada dan perlu pre-load).
+ * Mode tambah baru pakai render client-side via AJAX (lihat loadFormPenilaian di JS).
+ *
+ * @param  array $isiByInd    Item penilaian dikelompokkan per nama indikator.
+ *                            Struktur: ['Disiplin' => [item1, item2], 'Kerjasama' => [...]]
+ * @param  array $editDetail  Map id_item => nilai, dipakai untuk prefill radio button
+ * @return string             HTML form penilaian siap echo
+ */
 function renderKomponenHtml(array $isiByInd, array $editDetail = []): string {
     if (empty($isiByInd)) {
         return '<div style="text-align:center;padding:30px;color:#9ca3af;border:2px dashed #e5e7eb;border-radius:12px;">
@@ -859,7 +870,7 @@ function updateProgress() {
     const predikatEl = document.getElementById('progPredikat');
     if (totalFilled > 0) {
         const p = predikatLabel(overallPct);
-        nilaiEl.textContent = overallPct.toFixed(1) + '%';
+        nilaiEl.textContent = overallPct.toFixed(1);
         nilaiEl.style.color = p.color;
         predikatEl.textContent = ' · ' + p.label;
         predikatEl.style.color = p.color;
@@ -1068,7 +1079,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td>
                     <?php if ($p['rata_nilai']): ?>
                         <span style="font-weight:600;color:<?= $p['rata_nilai']>=75?'#16a34a':($p['rata_nilai']>=50?'#d97706':'#dc2626') ?>">
-                            <?= $p['rata_nilai'] ?>%
+                            <?= $p['rata_nilai'] ?>
                         </span>
                     <?php else: ?><span class="text-muted">-</span><?php endif; ?>
                 </td>

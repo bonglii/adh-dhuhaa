@@ -21,7 +21,7 @@ $totalPenilaian = $pdo->query("SELECT COUNT(*) FROM penilaian")->fetchColumn();
 // dan ubah query di bawah menjadi: WHERE status = 'final'
 $penilaianFinal = $pdo->query("SELECT COUNT(*) FROM penilaian")->fetchColumn();
 
-// Penilaian terbaru
+// ─── Penilaian terbaru (5 teratas untuk tabel di bagian bawah halaman) ─────
 $recentPenilaian = $pdo->query("
     SELECT p.*, g.nama, g.jabatan, g.tipe
     FROM penilaian p JOIN guru g ON p.id_guru = g.id_guru

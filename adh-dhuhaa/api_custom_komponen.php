@@ -14,6 +14,7 @@ error_reporting(0);
 require_once 'includes/config.php';
 requireLogin();
 
+// ─── Mode 1: ?tipe=<kode> — list komponen (tahun ajaran) per tipe guru ───────
 if (isset($_GET['tipe'])) {
     $tipe = sanitize($_GET['tipe'] ?? '');
     if (!$tipe || !isValidTipe($pdo, $tipe)) {
@@ -24,6 +25,7 @@ if (isset($_GET['tipe'])) {
     jsonResponse($stmt->fetchAll());
 }
 
+// ─── Mode 2: ?id_komponen=<id> — list isi (indikator + item) satu komponen ──
 if (isset($_GET['id_komponen'])) {
     $id_komponen = (int)($_GET['id_komponen'] ?? 0);
     if (!$id_komponen) { jsonResponse([]); }
@@ -39,4 +41,5 @@ if (isset($_GET['id_komponen'])) {
     jsonResponse($stmt->fetchAll());
 }
 
+// ─── Fallback: parameter tidak dikenali → array kosong ──────────────────────
 jsonResponse([]);

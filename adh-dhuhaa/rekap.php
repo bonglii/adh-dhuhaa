@@ -18,7 +18,12 @@ requireLogin();
 // ─── Filter (hanya tipe + search; tahun ajaran via accordion saja) ─────────
 $filterTipe = sanitize($_GET['tipe'] ?? '');
 
-// ─── Subquery rata-rata indikator per penilaian (sama seperti sebelumnya) ──
+// ─── Subquery rata-rata indikator per penilaian ───────────────────────────
+// Nilai akhir BUKAN rata-rata flat dari semua item, melainkan:
+//   1. Hitung persentase per indikator: SUM(nilai) / (COUNT * 5) * 100
+//   2. Nilai akhir = rata-rata antar indikator (AVG)
+// Formula ini agar bobot setiap indikator sama, tidak tergantung jumlah item.
+// NULLIF(COUNT*5, 0) cegah division-by-zero kalau indikator tidak punya item.
 $subNilai = "
     SELECT p2.id_penilaian AS penilaian_id,
         (
@@ -107,6 +112,8 @@ $stmtBelum->execute($paramsBelum);
 $guruBelumDinilai = $stmtBelum->fetchAll();
 
 // ─── Cari guru paling meningkat & paling menurun ──────────────────────────
+// Bangun history nilai per guru (dari semua TA). Urutan: DESC ke ASC (array_reverse)
+// supaya elemen terakhir = TA paling baru. Bandingkan 2 TA terakhir untuk hitung delta.
 $historyByGuru = [];
 foreach ($allRows as $row) {
     if ($row['nilai'] !== null) {
@@ -120,16 +127,18 @@ foreach ($historyByGuru as $idg => $hist) {
     $historyByGuru[$idg] = array_reverse($hist);
 }
 
+// Cari guru dengan delta naik tertinggi (paling meningkat) dan delta turun terdalam
 $palingMeningkat = null; $palingMenurun = null;
 $maxNaik = 0; $maxTurun = 0;
 foreach ($historyByGuru as $idGuru => $hist) {
-    if (count($hist) < 2) continue;
+    if (count($hist) < 2) continue; // perlu minimal 2 TA untuk hitung delta
     $n = count($hist);
     $delta = $hist[$n-1]['nilai'] - $hist[$n-2]['nilai'];
     if ($delta > $maxNaik)  { $maxNaik = $delta;  $palingMeningkat = ['id' => $idGuru, 'delta' => $delta]; }
     if ($delta < $maxTurun) { $maxTurun = $delta; $palingMenurun  = ['id' => $idGuru, 'delta' => $delta]; }
 }
 
+// Lookup map nama guru by id (untuk render "paling meningkat/menurun")
 $namaGuruMap = [];
 foreach ($allRows as $row) $namaGuruMap[$row['id_guru']] = $row['nama'];
 foreach ($guruBelumDinilai as $row) {
@@ -141,6 +150,12 @@ $jumlahDinilaiLatest = count($idGuruDinilaiLatest);
 
 $tipeLabel = getTipeGuru($pdo);
 
+/**
+ * nilaiLabel — Konversi persentase nilai ke predikat + warna hex.
+ *
+ * @param  float|null $n  Persentase nilai akhir (0-100)
+ * @return array          [label_predikat, warna_hex]
+ */
 function nilaiLabel($n): array
 {
     if ($n === null) return ['Belum Dinilai', '#6b7280'];
@@ -320,7 +335,7 @@ function nilaiLabel($n): array
                         </div>
                         <div style="font-size:12px;color:#6b7280;">
                             <?= $stat['jumlah'] ?> guru dinilai ·
-                            rata-rata <strong style="color:<?= $colorStat ?>;"><?= $stat['rata'] ?? '—' ?>%</strong>
+                            rata-rata <strong style="color:<?= $colorStat ?>;"><?= $stat['rata'] ?? '—' ?></strong>
                             · <?= htmlspecialchars($labelStat) ?>
                         </div>
                     </div>
@@ -376,7 +391,7 @@ function nilaiLabel($n): array
                                     </div>
                                     <span style="font-weight:600;color:<?= $color ?>;
                                                  min-width:36px;font-size:12px;">
-                                        <?= $r['nilai'] ?>%
+                                        <?= $r['nilai'] ?>
                                     </span>
                                 </div>
                                 <?php else: ?>

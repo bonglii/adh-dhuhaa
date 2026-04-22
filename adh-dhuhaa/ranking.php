@@ -92,6 +92,15 @@ if ($activeTA) {
 $tipeLabel = getTipeGuru($pdo);
 
 // ─── 4. Helper ──────────────────────────────────────────────────────────────
+
+/**
+ * predikat — Konversi nilai persentase ke predikat + warna hex.
+ * Sama dengan nilaiLabel() di rekap.php; dibuat terpisah agar file
+ * mandiri tanpa dependency lintas-file.
+ *
+ * @param  float|null $n  Persentase nilai (0-100)
+ * @return array          [label_predikat, warna_hex]
+ */
 function predikat($n)
 {
     if ($n === null) return ['Belum Dinilai', '#6b7280'];
@@ -102,6 +111,12 @@ function predikat($n)
     return                  ['Kurang',             '#dc2626'];
 }
 
+/**
+ * medalEmoji — Emoji medali untuk rank 1/2/3, null untuk rank lainnya.
+ *
+ * @param  int        $rank  Posisi ranking (1 = emas, 2 = perak, 3 = perunggu)
+ * @return string|null       Emoji medali atau null
+ */
 function medalEmoji($rank)
 {
     if ($rank === 1) return '🥇';
@@ -445,11 +460,11 @@ function medalEmoji($rank)
             </select>
             <select id="filterPredikat" class="form-control-custom" onchange="applyFilter()">
                 <option value="">Semua Predikat</option>
-                <option value="90">Sangat Baik Sekali (≥90%)</option>
-                <option value="75">Sangat Baik (≥75%)</option>
-                <option value="60">Baik (≥60%)</option>
-                <option value="40">Cukup (≥40%)</option>
-                <option value="0">Kurang (&lt;40%)</option>
+                <option value="90">Sangat Baik Sekali (≥ 90)</option>
+                <option value="75">Sangat Baik (≥ 75)</option>
+                <option value="60">Baik (≥ 60)</option>
+                <option value="40">Cukup (≥ 40)</option>
+                <option value="0">Kurang (&lt; 40)</option>
             </select>
         </div>
     </div>
@@ -495,7 +510,7 @@ function medalEmoji($rank)
             <div>
                 Menampilkan <strong><?= $totalGuruTA ?> guru</strong> · <strong><?= $totalPenilaianTA ?> penilaian</strong> di TA <strong><?= htmlspecialchars($activeTA) ?></strong>
                 <?php if ($totalGuruTA > 0): ?>
-                    · Rata-rata: <strong><?= $avgTA ?>%</strong>
+                    · Rata-rata: <strong><?= $avgTA ?></strong>
                 <?php endif; ?>
             </div>
             <?php if ($totalGuruTA > 0): ?>
@@ -534,7 +549,7 @@ function medalEmoji($rank)
                             <div class="podium-card podium-<?= $variant ?>">
                                 <div class="podium-name"><?= htmlspecialchars($pr['nama']) ?></div>
                                 <div class="podium-jabatan"><?= htmlspecialchars($pr['jabatan'] ?? '—') ?></div>
-                                <div class="podium-nilai" style="color:<?= $col ?>;"><?= $pr['nilai_akhir'] ?>%</div>
+                                <div class="podium-nilai" style="color:<?= $col ?>;"><?= $pr['nilai_akhir'] ?></div>
                                 <div class="podium-pred" style="color:<?= $col ?>;"><?= $pred ?></div>
                             </div>
                             <div class="podium-rank badge-<?= $variant ?>">#<?= $pIdx + 1 ?></div>
@@ -595,7 +610,7 @@ function medalEmoji($rank)
                                         <div class="nilai-bar">
                                             <div class="nilai-bar-fill" style="width:<?= min($r['nilai_akhir'], 100) ?>%;background:<?= $col ?>;"></div>
                                         </div>
-                                        <span class="nilai-angka" style="color:<?= $col ?>;"><?= $r['nilai_akhir'] ?>%</span>
+                                        <span class="nilai-angka" style="color:<?= $col ?>;"><?= $r['nilai_akhir'] ?></span>
                                     </div>
                                 </td>
                                 <td>

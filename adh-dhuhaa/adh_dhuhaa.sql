@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Apr 17, 2026 at 09:37 AM
+-- Generation Time: Apr 22, 2026 at 04:07 AM
 -- Server version: 8.0.30
 -- PHP Version: 8.1.10
 
@@ -56,9 +56,7 @@ INSERT INTO `guru` (`id_guru`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kep
 (10, 'Nur Khoirun Nisa, S.Pd', '20220726011999 008', '2022-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (11, 'Musdalifah, S.Pd', '20220708121995 009', '2022-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (12, 'Regas Sahromi, S.Pd', '20220703061998 013', '2022-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(13, 'Kontana Hafiz', '202407 05042002 009', '2024-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (14, 'Dandy Badrul Zaman', '202501 11112000 001', '2025-01-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(15, 'Juraina, S.P', '202407 09061997 003', '2024-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (16, 'Ani Kinanti, S.Kom', '202407 01101999 004', '2024-07-01', 'Operator Sekolah', 'Operator Sekolah', 'gtk', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
 (17, 'Nurul Hidayati', '202407 13022002 007', '2024-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (18, 'Anisa Alawiyah', '202407 06061999 010', '2024-07-01', 'Guru Siroh', 'Guru Siroh', 'mapel', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
@@ -70,8 +68,7 @@ INSERT INTO `guru` (`id_guru`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kep
 (24, 'Puji Astuti, S.Psi', '202207 11101988 007', '2022-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (25, 'Sapitri, S.Pd', '202407 07122001 006', '2024-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (26, 'Siti Rahmawati, S.Pd', '202207 14071999 006', '2022-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(27, 'Aldo Afuleno, S.Pd', '202407 26042000 015', '2024-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(28, 'Nurul Hudayah, S.E', '202107 03061999 030', '2021-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
+(27, 'Aldo Afuleno, S.Pd', '202407 26042000 015', '2024-07-01', 'Guru Kelas 3D', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-04-22 03:34:52'),
 (29, 'Iren Prabugma, S.Pd', '202307 11012001 003', '2023-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (30, 'Yasa Putri, S.P', '202501 17061996 003', '2025-01-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
 (31, 'Khoirun Nisa, S.Pd', '202501 01012002 002', '2025-01-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
@@ -81,18 +78,15 @@ INSERT INTO `guru` (`id_guru`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kep
 (35, 'Ari Firdaus, A.Ma', '202101 16061995 028', '2021-01-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (36, 'Ilam Maryam, S.Mat', '202411 29092001 015', '2024-11-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
 (37, 'Sunartik, S.Pd', '202007 13111992 018', '2020-07-01', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(38, 'Hapipah, S.Pd', '202303 02121996 001', '2024-11-05', 'Guru Kelas', 'Guru Kelas', 'guru_kelas', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (39, 'Faradila Agustina, S.Pd', '202207 09081992 004', '2022-07-01', 'Guru Mapel B. Inggris', 'Guru Mapel B. Inggris', 'mapel', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (40, 'Romadhon, S.Pd', '202109 02121995 016', '2021-09-01', 'Guru Mapel PAI', 'Guru Mapel PAI', 'mapel', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (41, 'Bahrum, S.Pd', '202510 03072002 001', '2025-10-06', 'Guru PJOK', 'Guru PJOK', 'mapel', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
 (42, 'Deri Lisnawati, S.Sos', '202107 15121997 033', '2021-07-01', 'Guru Tahsin & Tahfidz', 'Guru Tahsin & Tahfidz', 'guru_quran', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
-(43, 'Istiqomah, S.Pd', '202307 19091987 012', '2023-07-01', 'Guru Siroh', 'Guru Siroh', 'mapel', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (44, 'Hasyim Ashari, S.T., M.Pd', '202007 20041995 020', '2020-07-01', 'Kepala Sekolah', 'Kepala Sekolah', 'gtk', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
 (45, 'Kamila, S.P', '202007 10121997 013', '2019-07-01', 'Waka. Bidang Kurikulum', 'Waka. Bidang Kurikulum', 'gtk', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(46, 'Cempaka', '202007 13061982 019', '2012-07-01', 'Waka. Bidang Kesiswaan', 'Waka. Bidang Kesiswaan', 'gtk', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(47, 'Ismail, SH', '201907 21011996 007', '2019-07-01', 'Waka. Bidang Keislaman', 'Waka. Bidang Keislaman', 'gtk', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
+(46, 'Cempaka', '202007 13061982 019', '2012-07-01', 'Waka. Bidang Kesiswaan', 'Waka. Bidang Kesiswaan', 'wakil_kepala_sekolah', '2026-03-30 02:49:31', '2026-04-22 03:45:51'),
+(47, 'Ismail, SH', '201907 21011996 007', '2019-07-01', 'Waka. Bidang Keislaman', 'Waka. Bidang Keislaman', 'wakil_kepala_sekolah', '2026-03-30 02:49:31', '2026-04-22 03:46:01'),
 (48, 'Kessye Arisani, S.Si', '201907 23011988 008', NULL, 'Kepala Tata Usaha', 'Kepala Tata Usaha', 'gtk', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
-(49, 'Arif Tria Firmansyah, A.Md', '202007 16011974 026', NULL, 'Operator Sekolah', 'Operator Sekolah', 'gtk', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (50, 'Biswin', '202007 05111969 027', '2020-07-01', 'Keamanan & Koordinator Kebersihan', 'Keamanan & Koordinator Kebersihan', 'gtk', '2026-03-30 02:49:31', '2026-04-01 00:00:00'),
 (51, 'Nadila Fasya Anggraeni, S.Kom', '202407 28012002 013', '2024-07-01', 'Tata Usaha', 'Tata Usaha', 'gtk', '2026-03-30 02:49:31', '2026-03-30 02:49:31'),
 (52, 'Faturrahman Arif Rumata, S.Pd., M.Pd', '202507 03061998 007', '2025-07-01', 'Mapel PAI & Siroh', 'Mapel PAI & Siroh', 'mapel', '2026-04-01 00:00:00', '2026-04-01 00:00:00'),
@@ -129,6 +123,16 @@ CREATE TABLE `guru_history` (
   `keterangan` text,
   `waktu` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `guru_history`
+--
+
+INSERT INTO `guru_history` (`id_guru_history`, `aksi`, `id_guru`, `nama`, `nrg`, `tmt_guru`, `jabatan`, `status_kepegawaian`, `tipe`, `oleh`, `keterangan`, `waktu`) VALUES
+(13, 'edit', 27, 'Aldo Afuleno, S.Pd', '202407 26042000 015', '2024-07-01', 'Guru Kelas', 'Guru Kelas 1', 'guru_kelas', 'Administrator', 'Sebelum: Aldo Afuleno, S.Pd | Guru Kelas | guru_kelas', '2026-04-22 03:34:13'),
+(14, 'edit', 27, 'Aldo Afuleno, S.Pd', '202407 26042000 015', '2024-07-01', 'Guru Kelas 3D', 'Guru Kelas', 'guru_kelas', 'Administrator', 'Sebelum: Aldo Afuleno, S.Pd | Guru Kelas | guru_kelas', '2026-04-22 03:34:52'),
+(15, 'edit', 46, 'Cempaka', '202007 13061982 019', '2012-07-01', 'Waka. Bidang Kesiswaan', 'Waka. Bidang Kesiswaan', 'wakil_kepala_sekolah', 'Administrator', 'Sebelum: Cempaka | Waka. Bidang Kesiswaan | gtk', '2026-04-22 03:45:51'),
+(16, 'edit', 47, 'Ismail, SH', '201907 21011996 007', '2019-07-01', 'Waka. Bidang Keislaman', 'Waka. Bidang Keislaman', 'wakil_kepala_sekolah', 'Administrator', 'Sebelum: Ismail, SH | Waka. Bidang Keislaman | gtk', '2026-04-22 03:46:01');
 
 -- --------------------------------------------------------
 
@@ -225,25 +229,7 @@ INSERT INTO `isi` (`id_komponen`, `nama_indikator`, `urutan_isi`, `id_item`, `no
 (20, 'Pelaksanaan Pembelajaran', 2, 71, '2.4'),
 (20, 'Pelaksanaan Pembelajaran', 2, 72, '2.5'),
 (20, 'Pelaksanaan Pembelajaran', 2, 73, '2.6'),
-(20, 'Pelaksanaan Pembelajaran', 2, 74, '2.7'),
-(21, 'Disiplin', 1, 44, '1.1'),
-(21, 'Disiplin', 1, 45, '1.2'),
-(21, 'Disiplin', 1, 46, '1.3'),
-(21, 'Disiplin', 1, 47, '1.4'),
-(21, 'Disiplin', 1, 48, '1.5'),
-(21, 'Disiplin', 1, 49, '1.6'),
-(21, 'Disiplin', 1, 50, '1.7'),
-(21, 'Disiplin', 1, 51, '1.8'),
-(21, 'Kerjasama', 3, 60, '3.1'),
-(21, 'Kerjasama', 3, 61, '3.2'),
-(21, 'Kerjasama', 3, 62, '3.3'),
-(21, 'Kerjasama', 3, 63, '3.4'),
-(21, 'Kerjasama', 3, 64, '3.5'),
-(21, 'Kerjasama', 3, 65, '3.6'),
-(21, 'Pelaksanaan Pembelajaran', 2, 54, '2.1'),
-(21, 'Pelaksanaan Pembelajaran', 2, 68, '2.2'),
-(21, 'Pelaksanaan Pembelajaran', 2, 70, '2.3'),
-(21, 'Pelaksanaan Pembelajaran', 2, 74, '2.4');
+(20, 'Pelaksanaan Pembelajaran', 2, 74, '2.7');
 
 -- --------------------------------------------------------
 
@@ -312,8 +298,7 @@ CREATE TABLE `komponen` (
 INSERT INTO `komponen` (`id_komponen`, `ta_komponen`, `type_guru`) VALUES
 (18, '2025/2026', 'guru_quran'),
 (19, '2025/2026', 'guru_kelas'),
-(20, '2025/2026', 'mapel'),
-(21, '2025/2026', 'mapel2');
+(20, '2025/2026', 'mapel');
 
 -- --------------------------------------------------------
 
@@ -354,9 +339,9 @@ CREATE TABLE `tipe_guru` (
 INSERT INTO `tipe_guru` (`id_tipe_guru`, `kode`, `label`, `urutan`) VALUES
 (1, 'guru_quran', 'Guru Qur\'an', 1),
 (2, 'guru_kelas', 'Guru Kelas', 2),
-(3, 'mapel', 'Guru Mapel 1', 3),
+(3, 'mapel', 'Guru Mapel', 3),
 (4, 'gtk', 'GTK/Staff', 4),
-(8, 'mapel2', 'Guru Mapel 2', 5);
+(9, 'wakil_kepala_sekolah', 'Wakil Kepala Sekolah', 5);
 
 -- --------------------------------------------------------
 
@@ -464,7 +449,7 @@ ALTER TABLE `guru`
 -- AUTO_INCREMENT for table `guru_history`
 --
 ALTER TABLE `guru_history`
-  MODIFY `id_guru_history` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id_guru_history` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `item`
@@ -476,19 +461,19 @@ ALTER TABLE `item`
 -- AUTO_INCREMENT for table `komponen`
 --
 ALTER TABLE `komponen`
-  MODIFY `id_komponen` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
+  MODIFY `id_komponen` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
 
 --
 -- AUTO_INCREMENT for table `penilaian`
 --
 ALTER TABLE `penilaian`
-  MODIFY `id_penilaian` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=61;
+  MODIFY `id_penilaian` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=66;
 
 --
 -- AUTO_INCREMENT for table `tipe_guru`
 --
 ALTER TABLE `tipe_guru`
-  MODIFY `id_tipe_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id_tipe_guru` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `users`

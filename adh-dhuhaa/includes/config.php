@@ -1,16 +1,29 @@
 <?php
+/**
+ * includes/config.php — Konfigurasi Inti Aplikasi
+ *
+ * File ini di-require di hampir semua halaman PHP. Berisi:
+ *  - Session bootstrapping
+ *  - Konfigurasi koneksi database (PDO)
+ *  - Konstanta informasi sekolah (tampil di kop raport)
+ *  - Helper functions: autentikasi, sanitasi, JSON response
+ *  - Helper tipe guru dinamis (cache di $GLOBALS)
+ *  - Konstanta INDIKATOR_LIST (daftar indikator penilaian)
+ */
+
+// ─── Bootstrap session ───────────────────────────────────────────────────────
 // Mulai session sebelum output apapun
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Konfigurasi Database
+// ─── Konfigurasi Database ────────────────────────────────────────────────────
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'adh_dhuhaa');
 
-// Informasi Sekolah
+// ─── Informasi Sekolah (dipakai di kop raport cetak.php) ─────────────────────
 define('NAMA_SEKOLAH', 'SD IT QURANI ADH-DHUHAA');
 define('YAYASAN', 'YAYASAN ADH-DHUHAA PANGKALPINANG');
 define('ALAMAT', 'Jl. Melati I No. 257 Kel. Taman Bunga Kec. Gerunggang Kota Pangkalpinang');
@@ -18,6 +31,10 @@ define('TELP', '(0717) 9116753');
 define('NPSN', '70002294');
 define('EMAIL', 'sditquraniadduha@gmail.com');
 
+// ─── Inisialisasi PDO ────────────────────────────────────────────────────────
+// ERRMODE_EXCEPTION: lempar PDOException saat query gagal, bukan silent fail
+// FETCH_ASSOC: default hasil fetch pakai array asosiatif
+// EMULATE_PREPARES=false: pakai real prepared statement server-side (lebih aman)
 try {
     $pdo = new PDO(
         "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
@@ -33,10 +50,23 @@ try {
     die(json_encode(['error' => 'Koneksi database gagal: ' . $e->getMessage()]));
 }
 
+// ─── Helper: Autentikasi & Session ───────────────────────────────────────────
+
+/**
+ * isLoggedIn — Cek apakah user sudah login.
+ *
+ * @return bool true jika $_SESSION['user_id'] terisi
+ */
 function isLoggedIn() {
     return isset($_SESSION['user_id']);
 }
 
+/**
+ * requireLogin — Redirect ke login.php jika user belum login.
+ * Dipanggil di awal setiap halaman terproteksi.
+ *
+ * @return void
+ */
 function requireLogin() {
     if (!isLoggedIn()) {
         header('Location: login.php');
@@ -44,14 +74,36 @@ function requireLogin() {
     }
 }
 
+/**
+ * getCurrentUser — Ambil data user yang sedang login.
+ *
+ * @return array|null Array user data dari session, atau null jika belum login
+ */
 function getCurrentUser() {
     return $_SESSION['user'] ?? null;
 }
 
+// ─── Helper: Sanitasi & Response ─────────────────────────────────────────────
+
+/**
+ * sanitize — Bersihkan input user dari potensi XSS.
+ * Urutan: trim whitespace → strip HTML tag → encode entitas HTML.
+ *
+ * @param  string $data  Input dari $_GET / $_POST
+ * @return string        String yang aman untuk disimpan / ditampilkan
+ */
 function sanitize($data) {
     return htmlspecialchars(strip_tags(trim($data)));
 }
 
+/**
+ * jsonResponse — Kirim respons JSON lalu hentikan eksekusi.
+ * Dipakai oleh endpoint api_*.php.
+ *
+ * @param  mixed $data  Data yang akan di-encode JSON
+ * @param  int   $code  HTTP status code (default 200)
+ * @return never        Tidak pernah return (exit)
+ */
 function jsonResponse($data, $code = 200) {
     http_response_code($code);
     header('Content-Type: application/json');
